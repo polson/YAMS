@@ -1,0 +1,16 @@
+torch==2.7.1
+numpy==2.3.5
+soundfile==0.13.1
+PyYAML==6.0.2
+omegaconf==2.3.0
+ml-collections==1.1.0
+tqdm==4.67.3
+einops==0.8.2
+beartype==0.22.9
+rotary-embedding-torch==0.8.9
+librosa==0.11.0
+packaging==26.2
+mlx==0.32.3; sys_platform == 'darwin' and platform_machine == 'arm64'
+mlx-metal==0.32.3; sys_platform == 'darwin' and platform_machine == 'arm64'
+mlx-spectro==0.9.10; sys_platform == 'darwin' and platform_machine == 'arm64'
+mlx-audio-separator==0.1.20; sys_platform == 'darwin' and platform_machine == 'arm64'

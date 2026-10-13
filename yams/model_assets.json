@@ -1,0 +1,41 @@
+{
+  "mlx_revision": "main",
+  "mlx_files": {
+    "bs_roformer_sw_config.json": {
+      "url": "https://huggingface.co/MrSimmo/BS_Roformer_SW-MLX/resolve/main/bs_roformer_sw_config.json",
+      "sha256": "ab4ae4369276c2ff12ee86d55ce45c37a88a82f6744c33c0bb6a40c1c2f620f9",
+      "bytes": 1141
+    },
+    "bs_roformer_sw.safetensors": {
+      "url": "https://huggingface.co/MrSimmo/BS_Roformer_SW-MLX/resolve/main/bs_roformer_sw.safetensors",
+      "sha256": "6c8303a829575d03f21562ea185be7b6b23e922052883dec1b9518ca00a920fc",
+      "bytes": 349521144
+    }
+  },
+  "torch_6stem_revision": "2b98254b19bdab07ce225d884ec4aa9dd8aafce1",
+  "torch_6stem_files": {
+    "BS-Rofo-SW-Fixed.ckpt": {
+      "url": "https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/resolve/2b98254b19bdab07ce225d884ec4aa9dd8aafce1/BS-Rofo-SW-Fixed.ckpt",
+      "sha256": "24e7d35ee9c64415673d3fd33e06a67cac2c103c5df6267ba1576459c775916e",
+      "bytes": 699412152
+    },
+    "BS-Rofo-SW-Fixed.yaml": {
+      "url": "https://huggingface.co/FractalSurfer/BS-RoFormer-SW-6stem/resolve/2b98254b19bdab07ce225d884ec4aa9dd8aafce1/BS-Rofo-SW-Fixed.yaml",
+      "sha256": "f9fada9f94e5ba2d2e4600196299459294bc5f532b314c209cc156ac63e4329b",
+      "bytes": 4613
+    }
+  },
+  "drumsep_revision": "a86e69fab4c7f7100d2b8f6f86c6466c57adcadb",
+  "drumsep_files": {
+    "aufr33-jarredou_DrumSep_model_mdx23c_ep_141_sdr_10.8059.ckpt": {
+      "url": "https://huggingface.co/lainlives/audio-separator-models/resolve/a86e69fab4c7f7100d2b8f6f86c6466c57adcadb/aufr33-jarredou_DrumSep_model_mdx23c_ep_141_sdr_10.8059.ckpt",
+      "sha256": "d2a4aa53eb584d21eead358a4e66d1882ad182911be018f052b5da73be9096d0",
+      "bytes": 437652699
+    },
+    "aufr33-jarredou_DrumSep_model_mdx23c_ep_141_sdr_10.8059.yaml": {
+      "url": "https://huggingface.co/lainlives/audio-separator-models/resolve/a86e69fab4c7f7100d2b8f6f86c6466c57adcadb/aufr33-jarredou_DrumSep_model_mdx23c_ep_141_sdr_10.8059.yaml",
+      "sha256": "440a13f67461b2cdad2bb1cb86c08ff27a8ec53093c4a24d4d7fc2c19cb9f5f5",
+      "bytes": 2417
+    }
+  }
+}

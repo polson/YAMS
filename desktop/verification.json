@@ -1,0 +1,107 @@
+{
+  "date": "2026-10-04",
+  "release_review_date": "2026-10-12",
+  "platform": "Linux",
+  "python_tests": 42,
+  "rust_subprocess_tests": 7,
+  "frontend_state_tests": 12,
+  "svelte_check": "0 errors, 0 warnings",
+  "frontend_production_build": "passed",
+  "native_debug_build": "passed",
+  "native_smoke": {
+    "programmatic_native_drop_event": "passed",
+    "canonical_folder_deduplication": "passed",
+    "read_only_preview": "passed",
+    "existing_stem_skip": "passed",
+    "explicit_recovery": "passed",
+    "gui_cancellation_original_preserved": "passed",
+    "one_second_mono_cuda_separation": "passed",
+    "eight_in_place_wav_outputs": "passed",
+    "backup_byte_identical": "passed",
+    "rerun_preview_skips_installed_stems": "passed"
+  },
+  "unverified": [
+    "manual file-manager drag gesture and native file-dialog interaction",
+    "Windows and macOS builds and execution",
+    "CPU model execution and performance",
+    "end-to-end audio processing and desktop interaction from an installed Linux release package",
+    "tagged GitHub release upload",
+    "YARG playback"
+  ],
+  "standalone_debug_build": "passed",
+  "standalone_native_smoke_without_preview_server": "passed",
+  "real_desktop_rendering": "Passed with built-in Linux DMA-BUF workaround; no launch flags or forced compositing setting",
+  "native_smoke_forces_compositing_disabled": false,
+  "native_driver_startup": "Readiness endpoint checked before creating the session",
+  "minimal_ui": {
+    "removed_intro_stem_labels_footer_and_routine_banners": true,
+    "minimum_visible_font_size_px": 14,
+    "smooth_within_model_progress": true,
+    "native_preview_recovery_cancellation": "passed"
+  },
+  "automatic_refresh_and_retry": "passed native cancellation/retry check",
+  "large_collection_state_test": {
+    "records": 9000,
+    "progress_updates": 1000,
+    "virtual_row_height_px": 52,
+    "render_limit": "ceil(viewport height / 52) + 10",
+    "result": "passed",
+    "end_to_end_9000_song_run": "not tested"
+  },
+  "python_test_fixture": "Committed tests/test_folders.py copied to temporary test directory; unrelated broken local edit preserved",
+  "progress_and_queue_controls": {
+    "elapsed_and_estimated_remaining": "passed state/native checks",
+    "drop_target_min_height_px": 180,
+    "drop_outside_target": "passed native event at window coordinates 0,0",
+    "clear_disabled_while_running": "passed native checks",
+    "individual_remove_buttons": false,
+    "completed_open_folder": "passed native button and exact directory argument with mock platform opener",
+    "download_time_excluded_from_inference_estimate": "passed frontend state test"
+  },
+  "gpu_memory_protection": {
+    "preflight": "parameter/buffer bytes plus minimum 512 MiB workspace checked before CUDA transfer",
+    "desktop_headroom": "greater of 1 GiB or 20% total VRAM",
+    "allocation_cap": "passed real CUDA: 8 MiB request rejected under 1 MiB cap",
+    "out_of_memory_rollback": "passed mocked CUDA OOM transaction test",
+    "real_one_second_cuda_inference": "passed",
+    "driver_hangs": "not guaranteed; external resource use can change"
+  },
+  "large_collection_native_test": {
+    "records": 9003,
+    "preview_and_scroll_seconds": 1.95,
+    "row_height_px": 52,
+    "max_mounted_rows": "fewer than 30 on test viewport",
+    "scroll_middle_and_end": "passed",
+    "single_python_batch_preview": "passed",
+    "persistent_queue_resume": "not implemented"
+  },
+  "automatic_models": {
+    "scope": "Historical 53-target model checks; these results do not verify the current desktop model profiles.",
+    "asset_count": 14,
+    "targets": 7,
+    "download_bytes": 543328258,
+    "revision": "0677941f9cdfd891a6bc3336229244e197035327",
+    "default_cache": "Tauri platform application cache/models/mega-v1",
+    "manual_model_picker": false,
+    "live_config_download": "passed SHA-256 verification",
+    "live_checkpoint_download": "passed SHA-256 verification",
+    "native_first_use_missing_config_download": "passed with subsequent CUDA separation",
+    "cache_reuse_offline": "passed unit check with network prohibited",
+    "corrupt_cache_repair": "passed",
+    "invalid_download_publication": "rejected; previous file retained",
+    "cancellation_and_network_failure_partial_cleanup": "passed",
+    "setup_failure_stops_pending_jobs": "passed Rust worker test",
+    "worker_wheel_registry": "included"
+  },
+  "release_review": {
+    "current_linux_default_profile": "mega-8stem: six-stem BS-RoFormer plus DrumSep",
+    "current_linux_eight_track_model_bytes": 1137071881,
+    "current_linux_six_track_model_bytes": 699416765,
+    "appimage_and_rpm": "built in GitHub Actions manual run; artifact upload then failed on Actions storage quota",
+    "rpm_install_and_launch": "passed in disposable Fedora 44 container",
+    "tagged_draft_release_upload": "not verified",
+    "model_weight_terms": "not confirmed for public use; see MODEL_NOTICES.md",
+    "project_source_license": "not stated; choose one if source reuse is intended"
+  },
+  "product_name": "YAMS — Yet Another Music Separator"
+}

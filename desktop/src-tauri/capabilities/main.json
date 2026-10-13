@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Folder selection and worker progress for the main window",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:allow-open", "process:allow-restart", "updater:default", "core:window:allow-close", "core:window:allow-minimize", "core:window:allow-toggle-maximize", "core:window:allow-start-dragging"]
+}
