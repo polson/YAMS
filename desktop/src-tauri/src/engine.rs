@@ -167,6 +167,7 @@ impl Engine {
                 &cache,
                 &[
                     "venv",
+                    "--clear",
                     "--managed-python",
                     "--python",
                     "3.13.10",
