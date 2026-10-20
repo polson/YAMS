@@ -24,7 +24,7 @@ Run these commands from the `desktop` directory.
 Ready-to-run portable packages are available on GitHub Releases for each platform without requiring installers:
 
 - **Linux (x86_64)**: An AppImage and portable `.tar.gz` bundle. Download, make executable (`chmod +x`), and run directly.
-- **macOS (Apple Silicon)**: A DMG disk image and portable `.tar.gz` containing `YAMS.app`.
+- **macOS (Apple Silicon)**: A DMG disk image and portable `.tar.gz` containing `YAMS.app`. On first launch, click **Open Anyway** in **System Settings > Privacy & Security** (or run `xattr -cr /Applications/YAMS.app`).
 - **Windows (x64)**: A portable `.zip` containing `YAMS.exe` and bundled engine resources. Extract and run `YAMS.exe` directly.
 
 ## Current limits

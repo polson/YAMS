@@ -74,7 +74,7 @@ jobs:
           ### Downloads & Running
 
           - **Linux**: Download \`.AppImage\` (or portable \`.tar.gz\`), make executable (\`chmod +x\`), and run.
-          - **macOS (Apple Silicon)**: Open \`.dmg\` and run \`YAMS.app\` (or download portable \`.tar.gz\`).
+          - **macOS (Apple Silicon)**: Open \`.dmg\` and run \`YAMS.app\` (or download portable \`.tar.gz\`). On first launch, click **Open Anyway** in **System Settings > Privacy & Security**.
           - **Windows (x64)**: Download portable \`.zip\`, extract, and double-click \`YAMS.exe\`.
 
           Model downloads and licensing status:
@@ -222,11 +222,34 @@ jobs:
         working-directory: desktop
         run: npm ci
 
-      - name: Build macOS DMG and App
+      - name: Build macOS App
         working-directory: desktop
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: npm run tauri build -- --bundles dmg,app
+        run: npm run tauri build -- --bundles app
+
+      - name: Ad-hoc sign macOS App bundle
+        working-directory: desktop
+        run: |
+          APP_PATH="src-tauri/target/release/bundle/macos/YAMS.app"
+          codesign --force --deep -s - "$APP_PATH"
+          codesign --verify --deep --strict "$APP_PATH"
+
+      - name: Package macOS DMG
+        working-directory: desktop
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          DMG_STAGING="src-tauri/target/release/bundle/dmg-staging"
+          mkdir -p "$DMG_STAGING"
+          cp -R "src-tauri/target/release/bundle/macos/YAMS.app" "$DMG_STAGING/"
+          ln -s /Applications "$DMG_STAGING/Applications"
+          mkdir -p "src-tauri/target/release/bundle/dmg"
+          hdiutil create -volname "YAMS" \
+            -srcfolder "$DMG_STAGING" \
+            -ov -format UDZO \
+            "src-tauri/target/release/bundle/dmg/YAMS_${VERSION}_aarch64.dmg"
+          rm -rf "$DMG_STAGING"
 
       - name: Package macOS portable archive
         working-directory: desktop
