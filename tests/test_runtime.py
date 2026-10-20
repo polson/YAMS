@@ -29,7 +29,10 @@ class RuntimeTests(unittest.TestCase):
                         self.assertEqual(torch_backend(), expected)
                         self.assertIn("--id=0", query.call_args.kwargs["args"])
             with patch.object(sys, "platform", "linux"), patch("yams.runtime.subprocess.run", side_effect=FileNotFoundError):
-                self.assertEqual(torch_backend(), "cpu")
+                with patch("yams.runtime._has_amd_gpu", return_value=True):
+                    self.assertEqual(torch_backend(), "rocm6.2.4")
+                with patch("yams.runtime._has_amd_gpu", return_value=False):
+                    self.assertEqual(torch_backend(), "cpu")
     def test_successful_setup_is_reused_and_requirements_changes_invalidate_it(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

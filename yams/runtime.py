@@ -9,6 +9,15 @@ import tempfile
 from .folders import locked
 
 
+def _has_amd_gpu():
+    if any(p.is_file() and p.read_text().strip().lower() == "0x1002" for p in Path("/sys/class/drm").glob("card*/device/vendor")):
+        return True
+    try:
+        return subprocess.run(args=["rocm-smi", "--showid"], capture_output=True).returncode == 0
+    except OSError:
+        return False
+
+
 def torch_backend():
     if platform.machine().lower() not in ("x86_64", "amd64") or sys.platform == "darwin":
         return "cpu"
@@ -16,6 +25,8 @@ def torch_backend():
         result = subprocess.run(args=["nvidia-smi", "--id=0", "--query-gpu=driver_version,compute_cap", "--format=csv,noheader"], capture_output=True, text=True, check=True,
                                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
     except (OSError, subprocess.CalledProcessError):
+        if sys.platform.startswith("linux") and _has_amd_gpu():
+            return "rocm6.2.4"
         return "cpu"
     driver, capability = result.stdout.strip().split(",")
     version = tuple(int(part) for part in driver.strip().split("."))

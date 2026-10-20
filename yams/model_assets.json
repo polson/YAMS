@@ -37,5 +37,13 @@
       "sha256": "440a13f67461b2cdad2bb1cb86c08ff27a8ec53093c4a24d4d7fc2c19cb9f5f5",
       "bytes": 2417
     }
+  },
+  "onnx_6stem_revision": "a744f80957374e1735ad70fa122670b7961da8cc",
+  "onnx_6stem_files": {
+    "bs_roformer_sw_6stem_fp16.onnx": {
+      "url": "https://huggingface.co/elicwhite/bs-roformer-sw-6stem-onnx/resolve/a744f80957374e1735ad70fa122670b7961da8cc/bs_roformer_sw_6stem_fp16.onnx",
+      "sha256": "d3d2bac77a7023282cb5f35a5807179e34076b60589867b572275f1a8ec36444",
+      "bytes": 352778874
+    }
   }
 }

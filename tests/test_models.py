@@ -110,6 +110,14 @@ class ModelDownloadTests(unittest.TestCase):
             self.assertEqual(len(asset["sha256"]), 64)
             self.assertGreater(asset["bytes"], 0)
 
+    def test_registry_contains_pinned_onnx_assets(self):
+        self.assertIn("onnx_6stem_files", models.ASSETS)
+        self.assertIn("bs_roformer_sw_6stem_fp16.onnx", models.ASSETS["onnx_6stem_files"])
+        asset = models.ASSETS["onnx_6stem_files"]["bs_roformer_sw_6stem_fp16.onnx"]
+        self.assertIn(models.ASSETS["onnx_6stem_revision"], asset["url"])
+        self.assertEqual(len(asset["sha256"]), 64)
+        self.assertGreater(asset["bytes"], 0)
+
     def test_default_models_returns_8stem_path(self):
         path = models.default_models(profile="8stem")
         self.assertTrue(str(path).replace("\\", "/").endswith("models/torch-8stem") or str(path).replace("\\", "/").endswith("models/mlx-8stem"))

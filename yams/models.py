@@ -29,6 +29,8 @@ def _model_selection(profile):
         files = {**ASSETS["mlx_files"], **ASSETS["drumsep_files"]}
     elif profile == "torch-8stem":
         files = {**ASSETS["torch_6stem_files"], **ASSETS["drumsep_files"]}
+    elif profile == "onnx-6stem":
+        files = ASSETS["onnx_6stem_files"]
     else:
         raise ValueError(f"Unknown model profile: {profile}")
     return profile, files
