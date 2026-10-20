@@ -66,6 +66,10 @@ def ensure_runtime(installer, resources, emit, cancelled):
     check = resources / "check_runtime.py"
     version = hashlib.sha256(requirements.read_bytes() + check.read_bytes()).hexdigest()
     with locked(runtime):
+        from .ffmpeg import ensure_ffmpeg
+        ensure_ffmpeg(cache_dir=runtime.parent, resources_dir=resources,
+                      emit=lambda event, **kwargs: emit("runtime_setup", message=kwargs.get("message", "Preparing FFmpeg…")),
+                      cancelled=cancelled)
         marker = runtime / ".yams-ready"
         legacy_marker = runtime / ".yass-ready"
         if (marker.is_file() and marker.read_text() == version) or (legacy_marker.is_file() and legacy_marker.read_text() == version):

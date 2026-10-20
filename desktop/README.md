@@ -6,7 +6,7 @@ Choose six or eight tracks. Six separates vocals, drums, guitar, bass, piano, an
 
 ## First use
 
-The app prepares its audio engine automatically. The first separation downloads model files: about 1.1 GiB for the default eight-track profile on Linux, or 667 MiB for six tracks. An internet connection is needed. FFmpeg with Opus and SoXR support must be installed on the system. See [model notices](MODEL_NOTICES.md) for the weights and their licensing status.
+The app prepares its audio engine automatically. If FFmpeg with Opus and SoXR support is not found on your system, YAMS downloads a standalone build into its local cache automatically. The first separation downloads model files: about 1.1 GiB for the default eight-track profile on Linux, or 667 MiB for six tracks. An internet connection is needed. See [model notices](MODEL_NOTICES.md) for the weights and their licensing status.
 
 ## Run from source
 

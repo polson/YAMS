@@ -63,6 +63,21 @@ impl Settings {
             .env("XDG_CACHE_HOME", &cache)
             .env("NUMBA_CACHE_DIR", cache.join("numba"))
             .env("TORCH_HOME", cache.join("torch"));
+        let mut bin_paths = Vec::new();
+        let cache_bin = cache.join("bin");
+        if cache_bin.is_dir() {
+            bin_paths.push(cache_bin);
+        }
+        let project_bin = Path::new(&self.project).join("bin");
+        if project_bin.is_dir() {
+            bin_paths.push(project_bin);
+        }
+        if let Some(sys_path) = std::env::var_os("PATH") {
+            bin_paths.extend(std::env::split_paths(&sys_path));
+        }
+        if let Ok(new_path) = std::env::join_paths(bin_paths) {
+            command.env("PATH", new_path);
+        }
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;

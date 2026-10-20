@@ -1,7 +1,8 @@
 use crate::Settings;
 use serde::{Deserialize, Serialize};
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -178,6 +179,8 @@ impl Engine {
             ready = probe(&python, &resources, &cache, "--base");
         }
         let python = ready.map_err(|error| format!("Audio engine setup failed: {error}"))?;
+        emit("Checking FFmpeg…");
+        ensure_ffmpeg(Path::new(&python), &resources, &cache, &emit)?;
         let models = cache.join("models/mega-v1");
         #[cfg(debug_assertions)]
         let models = std::env::var_os("YAMS_MODELS")
@@ -193,12 +196,97 @@ impl Engine {
     }
 }
 
+fn ensure_ffmpeg(
+    python: &Path,
+    resources: &Path,
+    cache: &Path,
+    emit: &impl Fn(&str),
+) -> Result<(), String> {
+    let mut command = Command::new(python);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    let mut bin_paths = Vec::new();
+    let cache_bin = cache.join("bin");
+    if cache_bin.is_dir() {
+        bin_paths.push(cache_bin);
+    }
+    let resources_bin = resources.join("bin");
+    if resources_bin.is_dir() {
+        bin_paths.push(resources_bin);
+    }
+    if let Some(sys_path) = std::env::var_os("PATH") {
+        bin_paths.extend(std::env::split_paths(&sys_path));
+    }
+    if let Ok(new_path) = std::env::join_paths(bin_paths) {
+        command.env("PATH", new_path);
+    }
+    command
+        .env("PYTHONPATH", resources)
+        .arg("-m")
+        .arg("yams.ffmpeg")
+        .arg("--cache")
+        .arg(cache)
+        .arg("--resources")
+        .arg(resources)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("Could not check FFmpeg: {error}"))?;
+
+    if let Some(stdout) = child.stdout.take() {
+        let reader = std::io::BufReader::new(stdout);
+        for line in reader.lines().flatten() {
+            if let Some(msg) = line.strip_prefix("[ffmpeg_download] ") {
+                if !msg.is_empty() {
+                    emit(msg);
+                }
+            } else if let Some(msg) = line.strip_prefix("[ffmpeg_ready] ") {
+                if !msg.is_empty() {
+                    emit(msg);
+                }
+            }
+        }
+    }
+
+    let status = child
+        .wait()
+        .map_err(|error| format!("FFmpeg check failed: {error}"))?;
+    if !status.success() {
+        let mut stderr_msg = String::new();
+        if let Some(mut stderr) = child.stderr.take() {
+            let _ = std::io::Read::read_to_string(&mut stderr, &mut stderr_msg);
+        }
+        return Err(format!("FFmpeg setup failed: {stderr_msg}"));
+    }
+    Ok(())
+}
+
 fn probe(python: &Path, resources: &Path, cache: &Path, mode: &str) -> Result<String, String> {
     let mut command = Command::new(python);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
+    }
+    let mut bin_paths = Vec::new();
+    let cache_bin = cache.join("bin");
+    if cache_bin.is_dir() {
+        bin_paths.push(cache_bin);
+    }
+    let resources_bin = resources.join("bin");
+    if resources_bin.is_dir() {
+        bin_paths.push(resources_bin);
+    }
+    if let Some(sys_path) = std::env::var_os("PATH") {
+        bin_paths.extend(std::env::split_paths(&sys_path));
+    }
+    if let Ok(new_path) = std::env::join_paths(bin_paths) {
+        command.env("PATH", new_path);
     }
     let output = command
         .arg(resources.join("check_runtime.py"))

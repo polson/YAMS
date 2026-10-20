@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import platform
 import subprocess
@@ -5,6 +6,9 @@ import sys
 
 
 resources = Path(__file__).resolve().parent
+for bin_dir in (resources / "bin", Path(sys.prefix).parent / "bin"):
+    if bin_dir.is_dir() and str(bin_dir) not in os.environ.get("PATH", "").split(os.pathsep):
+        os.environ["PATH"] = f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"
 sys.path.insert(0, str(resources))
 sys.path.insert(0, str(resources / "inference"))
 sys.path.insert(0, str(resources / "yams/inference"))
