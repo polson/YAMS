@@ -2,7 +2,7 @@
   <img src="Images/Logo_Green.png" alt="YAMS" width="300" />
 </p>
 
-# YAMS — Yet Another Music Separator
+# YAMS: Yet Another Music Separator
 
 YAMS separates songs into instrument tracks for [YARG](https://yarg.in/). Add song folders, audio files, or CON packages to the desktop app’s queue.
 
