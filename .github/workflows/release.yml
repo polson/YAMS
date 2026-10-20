@@ -322,3 +322,19 @@ jobs:
           VERSION: ${{ needs.create-release.outputs.version }}
         run: |
           gh release upload "$TAG" "desktop/YAMS-v${VERSION}-windows-x64.zip" --clobber
+
+  prune-releases:
+    name: Prune Older Releases
+    needs: [create-release, release-linux, release-macos, release-windows]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Prune older release entries
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+        run: |
+          for existing_tag in $(gh release list --limit 100 --json tagName --jq '.[].tagName'); do
+            if [ "$existing_tag" != "$TAG" ]; then
+              gh release delete "$existing_tag" -y || true
+            fi
+          done
