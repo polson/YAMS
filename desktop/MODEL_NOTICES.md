@@ -9,4 +9,3 @@ The desktop app downloads its model weights on first use. The release packages i
 
 YAMS is licensed under the [MIT License](../LICENSE). The MIT license included with [the inference code](../yams/inference/LICENSE) covers that code, not model weights.
 
-Before a public release that downloads these weights, confirm their terms with the rights holders or choose models with clear terms.
