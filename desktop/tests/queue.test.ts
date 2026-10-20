@@ -76,9 +76,9 @@ test('automatic refresh preserves results and exposes safe retry', () => {
   assert.equal(pending.canRetry, false);
 });
 
-test('successful jobs release diagnostic buffers', () => {
+test('successful jobs preserve diagnostic logs', () => {
   const result = updateSong({ ...song, log: 'x'.repeat(8192) }, { kind: 'finished', id: 'a', status: 'completed', message: '' });
-  assert.equal(result.log, '');
+  assert.equal(result.log, 'x'.repeat(8192));
   assert.equal(result.canRetry, false);
 });
 

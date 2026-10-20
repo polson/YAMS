@@ -196,7 +196,7 @@ export function updateSong(song: Song, event: Exclude<BatchEvent, { kind: 'batch
     const message = event.message || (event.status === 'skipped' ? song.message : '');
     return { ...song, status: event.status, message, finishedAt: now,
       canRetry: ['cancelled', 'error', 'recovered'].includes(event.status),
-      log: event.status === 'completed' ? '' : song.log,
+      log: song.log,
       detail: event.status === 'completed'
         ? (song.destination ? 'Stems exported to destination' : 'Stems installed · original backed up')
         : message || event.status,
