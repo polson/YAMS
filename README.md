@@ -19,3 +19,8 @@ npm run tauri dev
 ```
 
 See the [desktop guide](desktop/README.md) for build requirements and setup details.
+
+## License
+
+YAMS is licensed under the [MIT License](LICENSE).
+

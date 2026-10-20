@@ -101,7 +101,7 @@
     "rpm_install_and_launch": "passed in disposable Fedora 44 container",
     "tagged_draft_release_upload": "not verified",
     "model_weight_terms": "not confirmed for public use; see MODEL_NOTICES.md",
-    "project_source_license": "not stated; choose one if source reuse is intended"
+    "project_source_license": "MIT"
   },
   "product_name": "YAMS — Yet Another Music Separator"
 }
