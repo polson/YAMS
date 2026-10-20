@@ -15,7 +15,17 @@ Prebuilt, portable zero-install packages are available on the [Releases](https:/
 - **macOS (Apple Silicon)**: DMG disk image and portable `.tar.gz` containing `YAMS.app`.
 - **Windows (x64)**: Portable `.zip` archive containing `YAMS.exe` and bundled engine resources.
 
-No installers or system configuration required. FFmpeg (with Opus and SoXR support) is detected automatically or downloaded into the app's local cache on first launch. GPU acceleration supports NVIDIA (CUDA) and Apple Silicon (Metal); AMD GPU support is in progress (runs in CPU mode).
+No installers or system configuration required. FFmpeg (with Opus and SoXR support) is detected automatically or downloaded into the app's local cache on first launch.
+
+## System requirements
+
+- **Operating System**: Windows 10/11 (64-bit), Linux (x86_64), or macOS (Apple Silicon).
+- **GPU Acceleration**:
+  - **NVIDIA**: Supported via CUDA (requires recent NVIDIA graphics drivers).
+  - **Apple Silicon**: Supported natively via Metal.
+  - **AMD / CPU**: Runs in CPU mode if a compatible GPU is not detected (AMD GPU support is in progress).
+- **Memory**: 8 GB RAM minimum (16 GB recommended).
+- **Storage & Network**: ~2 GB free disk space for engine dependencies and models; internet connection required on first launch.
 
 ## Run from source
 
