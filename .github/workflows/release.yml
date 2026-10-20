@@ -254,6 +254,9 @@ jobs:
     name: Build Windows Portable
     needs: create-release
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -302,22 +305,20 @@ jobs:
         run: npm run tauri build -- --no-bundle
 
       - name: Package Windows portable zip
-        shell: pwsh
         working-directory: desktop
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
         run: |
-          $Folder = "YAMS-v$env:VERSION-windows-x64"
-          New-Item -ItemType Directory -Path $Folder
-          Copy-Item "src-tauri/target/release/yams-desktop.exe" -Destination "$Folder/YAMS.exe"
-          Copy-Item -Recurse ".cache/engine" -Destination "$Folder/engine"
-          Compress-Archive -Path $Folder -DestinationPath "$Folder.zip"
+          FOLDER="YAMS-v${VERSION}-windows-x64"
+          mkdir -p "$FOLDER"
+          cp src-tauri/target/release/yams-desktop.exe "$FOLDER/YAMS.exe"
+          cp -r .cache/engine "$FOLDER/engine"
+          python -c "import shutil; shutil.make_archive('$FOLDER', 'zip', '$FOLDER')"
 
       - name: Upload Windows assets to GitHub Release
-        shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.create-release.outputs.tag }}
           VERSION: ${{ needs.create-release.outputs.version }}
         run: |
-          gh release upload $env:TAG "desktop/YAMS-v$env:VERSION-windows-x64.zip" --clobber
+          gh release upload "$TAG" "desktop/YAMS-v${VERSION}-windows-x64.zip" --clobber
