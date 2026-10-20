@@ -29,4 +29,4 @@ Ready-to-run portable packages are available on GitHub Releases for each platfor
 
 ## Current limits
 
-The queue is kept in memory and is not restored when the app restarts. Add the folders again to continue; completed exports remain in the destination folder. CPU separation and playback in YARG still need verification.
+The queue is kept in memory and is not restored when the app restarts. Add the folders again to continue; completed exports remain in the destination folder. GPU acceleration supports NVIDIA and Apple Silicon; AMD GPU support is currently in progress (falls back to CPU). CPU separation and playback in YARG still need verification.
