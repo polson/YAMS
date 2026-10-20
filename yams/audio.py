@@ -70,7 +70,16 @@ def _audio_file_report(audio, path):
 
 
 def _is_out_of_memory(error):
-    return isinstance(error, torch.OutOfMemoryError) or "out of memory" in str(error).lower()
+    err_str = str(error).lower()
+    return (
+        isinstance(error, torch.OutOfMemoryError)
+        or "out of memory" in err_str
+        or "dml allocator" in err_str
+        or "e_outofmemory" in err_str
+        or "hiperrormemoryallocation" in err_str
+        or "device_removed" in err_str
+        or "device_reset" in err_str
+    )
 
 
 def reconstruct(reference, outputs, rate, filenames=WAV_OUTPUTS):
@@ -315,6 +324,8 @@ def run_torch_6stem_pcm(stage, models, reference, rate, settings, model_utils, d
                 elif device.type == "mps":
                     torch.mps.empty_cache()
                 chunk_size //= 2
+                emit("model_retry", target="6stem", pass_number=1, chunk_size=chunk_size,
+                     detail=f"GPU memory limit reached; reducing chunk size to {chunk_size}")
                 continue
             if is_oom:
                 raise ValueError("Separation exceeded the safe GPU memory limit. Close GPU apps or choose CPU; the original song will be retained.") from error
@@ -436,6 +447,8 @@ def separate_drumsep_pcm(stage, models, reference, rate, settings, model_utils, 
                 elif device.type == "mps":
                     torch.mps.empty_cache()
                 chunk_size //= 2
+                emit("model_retry", target="drumsep", pass_number=2, chunk_size=chunk_size,
+                     detail=f"GPU memory limit reached; reducing chunk size to {chunk_size}")
                 continue
             if is_oom:
                 raise ValueError("Separation exceeded the safe GPU memory limit. Close GPU apps or choose CPU; the original song will be retained.") from error
@@ -497,10 +510,19 @@ def separate_8stem(stage, models, inference_source=None, device_name="auto", emi
         and (models / "bs_roformer_sw_config.json").is_file()
         and (models / "bs_roformer_sw.safetensors").is_file()
     )
+    use_onnx = (
+        (models / "bs_roformer_sw_6stem_fp16.onnx").is_file()
+        or (models / "bs_roformer_sw_6stem_fp32.onnx").is_file()
+    ) and (str(device_name).lower().startswith("dml") or model_profile == "onnx-8stem")
     if use_mlx:
         from .mlx_audio import run_mlx_6stem_pcm
         assets_1, elapsed_1, chunks_1 = run_mlx_6stem_pcm(stage=stage, models=models, reference=reference, rate=rate,
                                                           emit=emit, cancelled=cancelled, total_passes=2)
+        n_chunks_1 = chunks_1
+    elif use_onnx:
+        from .onnx_audio import run_onnx_6stem_pcm
+        assets_1, elapsed_1, chunks_1, _ = run_onnx_6stem_pcm(stage=stage, models=models, reference=reference, rate=rate,
+                                                              emit=emit, cancelled=cancelled, total_passes=2, device=device_name)
         n_chunks_1 = chunks_1
     else:
         assets_1, elapsed_1, chunks_1 = run_torch_6stem_pcm(
@@ -552,7 +574,10 @@ def separate(stage, models, inference_source=None, device_name="auto", emit=None
     if model_profile == "torch-6stem":
         return separate_torch_6stem(stage=stage, models=models, inference_source=inference_source,
                                     device_name=device_name, emit=emit, cancelled=cancelled)
-    if model_profile in ("mega-8stem", "8stem", "torch-8stem", "mlx-8stem"):
+    if model_profile == "onnx-6stem":
+        from .onnx_audio import separate_onnx
+        return separate_onnx(stage=stage, models=models, emit=emit, cancelled=cancelled, device_name=device_name)
+    if model_profile in ("mega-8stem", "8stem", "torch-8stem", "mlx-8stem", "onnx-8stem"):
         return separate_8stem(stage=stage, models=models, inference_source=inference_source,
                               device_name=device_name, emit=emit, model_profile=model_profile,
                               cancelled=cancelled)

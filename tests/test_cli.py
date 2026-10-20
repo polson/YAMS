@@ -114,6 +114,24 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(calls, ["mps"])
 
+    def test_dml_device_argument_passed_to_separate(self):
+        folder = self.fixture()
+        output = io.StringIO()
+        calls = []
+
+        def separate(stage, device_name, **kwargs):
+            calls.append(device_name)
+            for name in OUTPUTS:
+                (stage / "outputs" / name).write_bytes(name.encode())
+            files = {name: {"sha256": digest(stage / "outputs" / name)} for name in OUTPUTS}
+            return {"validation": {"peak_error": 0, "files": files}}
+
+        with patch.object(sys, "argv", [*self.command(folder), "--device", "dml:0"]), \
+             contextlib.redirect_stdout(output), patch("yams.audio.separate", side_effect=separate):
+            status = main()
+        self.assertEqual(status, 0)
+        self.assertEqual(calls, ["dml:0"])
+
     def test_interrupted_work_is_automatically_recovered_on_run(self):
         folder = self.fixture()
         folders.begin(folder, folder / "song.ogg")
@@ -277,6 +295,23 @@ class CommandTests(unittest.TestCase):
             status = main()
         self.assertEqual(status, 130)
         self.assertEqual(captured_profile, "torch-6stem")
+
+    def test_onnx_6stem_profile_passed_to_separate(self):
+        folder = self.fixture()
+        output = io.StringIO()
+        cmd = ["yams", str(folder), "--models", str(folder), "--model-profile", "onnx-6stem"]
+        captured_profile = None
+
+        def fake_separate(stage, models, model_profile="mega-8stem", **kwargs):
+            nonlocal captured_profile
+            captured_profile = model_profile
+            raise KeyboardInterrupt
+
+        with patch.object(sys, "argv", cmd), contextlib.redirect_stdout(output), \
+             patch("yams.audio.separate", side_effect=fake_separate):
+            status = main()
+        self.assertEqual(status, 130)
+        self.assertEqual(captured_profile, "onnx-6stem")
 
     def test_torch_6stem_accepted_on_con_package(self):
         try:
