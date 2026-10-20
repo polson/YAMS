@@ -8,4 +8,9 @@ uv 0.11.7 by Astral prepares the private Python environment and installs inferen
 
 Source: https://github.com/astral-sh/uv/tree/0.11.7
 
+FFmpeg static builds (configured with Opus and SoXR support) are downloaded on demand if no compatible system binary is detected. FFmpeg is licensed under the LGPL v2.1+ / GPL v3 and is invoked strictly as an external subprocess.
+
+Source: https://github.com/eugeneware/ffmpeg-static
+FFmpeg project: https://ffmpeg.org
+
 Downloaded Python and inference packages retain their own license files in the managed Python installation and virtual environment.
