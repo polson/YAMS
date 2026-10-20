@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "prepare-engine": "python3 scripts/prepare_engine.py",
+    "prepare-engine": "node scripts/run_prepare_engine.js",
     "dev": "vite --host 127.0.0.1 --port 1420 --strictPort",
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json",

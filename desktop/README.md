@@ -19,13 +19,15 @@ npm run tauri dev
 
 Run these commands from the `desktop` directory.
 
-## Build a Linux preview package
+## Releases and portable packages
 
-```bash
-npm run tauri build
-```
+Pushing a `vX.Y.Z` tag (or triggering the GitHub Actions release workflow) builds and publishes ready-to-run portable packages for each platform directly to the GitHub release without requiring installers:
 
-This creates a Fedora-family x86_64 RPM at `src-tauri/target/release/bundle/rpm/`. Pushing a `vX.Y.Z` tag sets the bundled app version from the tag, builds an AppImage and RPM, then publishes a GitHub release. AppImage installs check for signed updates on launch and install them automatically. RPM installs continue to use manual package updates. The release workflow signs AppImage updates with the `TAURI_SIGNING_PRIVATE_KEY` GitHub Actions secret. The AppImage is intended for broader Linux use, but has not been checked across distributions. The RPM has been installed and launched in a disposable Fedora 44 container; desktop interaction and audio processing still need a real-machine check. Windows and macOS are not release targets yet.
+- **Linux (x86_64)**: An AppImage and portable `.tar.gz` bundle. Download, make executable (`chmod +x`), and run directly.
+- **macOS (Apple Silicon)**: A DMG disk image and portable `.tar.gz` containing `YAMS.app`.
+- **Windows (x64)**: A portable `.zip` containing `YAMS.exe` and bundled engine resources. Extract and run `YAMS.exe` directly.
+
+The release workflow signs AppImage updates when the `TAURI_SIGNING_PRIVATE_KEY` repository secret is present. Packages publish straight to GitHub Releases without using Actions artifact storage.
 
 ## Current limits
 

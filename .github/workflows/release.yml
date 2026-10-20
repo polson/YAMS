@@ -1,0 +1,323 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag (e.g. v0.1.0)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    name: Initialize GitHub Release
+    runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.release_info.outputs.tag }}
+      version: ${{ steps.release_info.outputs.version }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Determine release version
+        id: release_info
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag_name }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          input_tag = os.environ.get("INPUT_TAG", "").strip()
+          ref_name = os.environ.get("GITHUB_REF_NAME", "")
+          ref_type = os.environ.get("GITHUB_REF_TYPE", "")
+
+          if input_tag:
+              tag = input_tag if input_tag.startswith("v") else f"v{input_tag}"
+          elif ref_type == "tag" and ref_name.startswith("v"):
+              tag = ref_name
+          else:
+              config = json.loads(Path("desktop/src-tauri/tauri.conf.json").read_text())
+              tag = f"v{config['version']}"
+
+          version = tag.removeprefix("v")
+          pattern = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[\da-zA-Z\-]+(?:\.[\da-zA-Z\-]+)*)?"
+          if re.fullmatch(pattern, version) is None:
+              raise SystemExit(f"Invalid semver version extracted from tag {tag}: {version}")
+
+          output_path = os.environ["GITHUB_OUTPUT"]
+          with open(output_path, "a") as f:
+              f.write(f"tag={tag}\n")
+              f.write(f"version={version}\n")
+          PY
+
+      - name: Create or verify release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release_info.outputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists."
+          else
+            gh release create "$TAG" \
+              --title "YAMS $TAG" \
+              --notes "Multi-platform portable release. Ready-to-run zero-install packages for Linux, macOS, and Windows.
+
+          ### Downloads & Running
+
+          - **Linux**: Download \`.AppImage\` (or portable \`.tar.gz\`), make executable (\`chmod +x\`), and run.
+          - **macOS (Apple Silicon)**: Open \`.dmg\` and run \`YAMS.app\` (or download portable \`.tar.gz\`).
+          - **Windows (x64)**: Download portable \`.zip\`, extract, and double-click \`YAMS.exe\`.
+
+          Model downloads and licensing status:
+          - [Desktop guide](https://github.com/${{ github.repository }}/blob/$TAG/desktop/README.md)
+          - [Model notices](https://github.com/${{ github.repository }}/blob/$TAG/desktop/MODEL_NOTICES.md)"
+          fi
+
+  release-linux:
+    name: Build Linux Portable
+    needs: create-release
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install uv
+        run: python -m pip install uv==0.11.7
+
+      - name: Install Tauri build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libappindicator3-dev \
+            libfuse2 \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            librsvg2-dev \
+            patchelf \
+            wget \
+            xdg-utils
+
+      - name: Set app version
+        working-directory: desktop
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          version = os.environ["VERSION"]
+          config_path = Path("src-tauri/tauri.conf.json")
+          config = json.loads(config_path.read_text())
+          config["version"] = version
+          config_path.write_text(json.dumps(config, indent=2) + "\n")
+          PY
+
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build Linux AppImage
+        working-directory: desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: npm run tauri build -- --bundles appimage
+
+      - name: Package Linux portable archive
+        working-directory: desktop
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          ARCHIVE_DIR="YAMS-v${VERSION}-linux-x64"
+          mkdir -p "$ARCHIVE_DIR"
+          cp src-tauri/target/release/yams-desktop "$ARCHIVE_DIR/YAMS"
+          chmod +x "$ARCHIVE_DIR/YAMS"
+          cp -r .cache/engine "$ARCHIVE_DIR/engine"
+          tar -czf "${ARCHIVE_DIR}.tar.gz" "$ARCHIVE_DIR"
+
+      - name: Upload Linux assets to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          UPLOAD_FILES=()
+          for f in desktop/src-tauri/target/release/bundle/appimage/*.AppImage*; do
+            if [ -f "$f" ]; then
+              UPLOAD_FILES+=("$f")
+            fi
+          done
+          UPLOAD_FILES+=("desktop/YAMS-v${VERSION}-linux-x64.tar.gz")
+          gh release upload "$TAG" "${UPLOAD_FILES[@]}" --clobber
+
+  release-macos:
+    name: Build macOS Portable
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install uv
+        run: python -m pip install uv==0.11.7
+
+      - name: Set app version
+        working-directory: desktop
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          version = os.environ["VERSION"]
+          config_path = Path("src-tauri/tauri.conf.json")
+          config = json.loads(config_path.read_text())
+          config["version"] = version
+          config_path.write_text(json.dumps(config, indent=2) + "\n")
+          PY
+
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build macOS DMG and App
+        working-directory: desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: npm run tauri build -- --bundles dmg,app
+
+      - name: Package macOS portable archive
+        working-directory: desktop
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          tar -czf "YAMS-v${VERSION}-macos-aarch64.tar.gz" -C src-tauri/target/release/bundle/macos YAMS.app
+
+      - name: Upload macOS assets to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          UPLOAD_FILES=()
+          for f in desktop/src-tauri/target/release/bundle/dmg/*.dmg*; do
+            if [ -f "$f" ]; then
+              UPLOAD_FILES+=("$f")
+            fi
+          done
+          UPLOAD_FILES+=("desktop/YAMS-v${VERSION}-macos-aarch64.tar.gz")
+          gh release upload "$TAG" "${UPLOAD_FILES[@]}" --clobber
+
+  release-windows:
+    name: Build Windows Portable
+    needs: create-release
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install uv
+        run: python -m pip install uv==0.11.7
+
+      - name: Set app version
+        working-directory: desktop
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          version = os.environ["VERSION"]
+          config_path = Path("src-tauri/tauri.conf.json")
+          config = json.loads(config_path.read_text())
+          config["version"] = version
+          config_path.write_text(json.dumps(config, indent=2) + "\n")
+          PY
+
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build Windows binary
+        working-directory: desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: npm run tauri build -- --no-bundle
+
+      - name: Package Windows portable zip
+        shell: pwsh
+        working-directory: desktop
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          $Folder = "YAMS-v$env:VERSION-windows-x64"
+          New-Item -ItemType Directory -Path $Folder
+          Copy-Item "src-tauri/target/release/yams-desktop.exe" -Destination "$Folder/YAMS.exe"
+          Copy-Item -Recurse ".cache/engine" -Destination "$Folder/engine"
+          Compress-Archive -Path $Folder -DestinationPath "$Folder.zip"
+
+      - name: Upload Windows assets to GitHub Release
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          gh release upload $env:TAG "desktop/YAMS-v$env:VERSION-windows-x64.zip" --clobber

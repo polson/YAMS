@@ -27,9 +27,15 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["rpm"],
+    "targets": "all",
     "createUpdaterArtifacts": true,
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "category": "Music",
     "shortDescription": "Music stem separation for YARG",
     "longDescription": "Separate songs into instrument tracks for YARG.",
