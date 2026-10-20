@@ -4,7 +4,7 @@
 
 # YAMS — Yet Another Music Separator
 
-YAMS separates songs into instrument tracks for [YARG](https://yarg.in/). Add song folders, audio files, or Rock Band packages to the desktop app’s queue.
+YAMS separates songs into instrument tracks for [YARG](https://yarg.in/). Add song folders, audio files, or CON packages to the desktop app’s queue.
 
 Choose six or eight tracks. Both include vocals, drums, guitar, bass, keys, and backing; the eight-track option splits drums into kick, snare, and the rest of the kit. Processing runs on your computer, and the app downloads its models the first time you use it. Export to a folder you choose; your original files stay untouched.
 
