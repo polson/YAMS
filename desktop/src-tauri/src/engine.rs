@@ -29,6 +29,7 @@ fn detect_available_model_profiles() -> Vec<String> {
     #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
     {
         profiles.push("torch-6stem".into());
+        profiles.push("onnx-6stem".into());
     }
     profiles
 }
@@ -49,6 +50,46 @@ impl Default for Preferences {
             available_model_profiles,
         }
     }
+}
+
+#[cfg(target_os = "linux")]
+fn has_linux_amd_gpu() -> bool {
+    if std::path::Path::new("/dev/kfd").exists() {
+        if let Ok(entries) = std::fs::read_dir("/sys/class/drm") {
+            for entry in entries.flatten() {
+                let vendor = entry.path().join("device/vendor");
+                if let Ok(content) = std::fs::read_to_string(vendor) {
+                    if content.trim().eq_ignore_ascii_case("0x1002") {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn has_windows_directml_gpu() -> bool {
+    use std::os::windows::process::CommandExt;
+    let mut cmd = Command::new("powershell");
+    cmd.creation_flags(0x08000000);
+    cmd.args([
+        "-NoProfile",
+        "-Command",
+        "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name",
+    ])
+    .output()
+    .map(|out| {
+        let stdout = String::from_utf8_lossy(&out.stdout).to_lowercase();
+        stdout.contains("amd")
+            || stdout.contains("radeon")
+            || stdout.contains("intel")
+            || stdout.contains("geforce")
+            || stdout.contains("rtx")
+            || stdout.contains("gtx")
+    })
+    .unwrap_or(false)
 }
 
 fn detect_available_devices() -> Vec<String> {
@@ -74,6 +115,18 @@ fn detect_available_devices() -> Vec<String> {
             devices.push("cuda:0".into());
         }
     }
+    #[cfg(target_os = "linux")]
+    {
+        if !devices.contains(&"cuda:0".to_string()) && has_linux_amd_gpu() {
+            devices.push("cuda:0".into());
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if has_windows_directml_gpu() {
+            devices.push("dml:0".into());
+        }
+    }
     devices.push("cpu".into());
     devices
 }
@@ -97,6 +150,7 @@ impl Engine {
         let models = match preferences.model_profile.as_str() {
             "mlx-6stem" => self.cache.join("models/mlx-6stem"),
             "torch-6stem" => self.cache.join("models/torch-6stem"),
+            "onnx-6stem" => self.cache.join("models/onnx-6stem"),
             _ => self.models.clone(),
         };
         Settings {
@@ -369,6 +423,7 @@ mod tests {
         #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
         {
             assert!(profiles.contains(&"torch-6stem".to_string()));
+            assert!(profiles.contains(&"onnx-6stem".to_string()));
         }
     }
 }

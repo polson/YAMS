@@ -31,7 +31,7 @@ impl Settings {
         if !has_main {
             return Err("Choose the YAMS project folder containing yams/__main__.py".into());
         }
-        if !["auto", "cpu", "cuda:0", "mps"].contains(&self.device.as_str()) {
+        if !["auto", "cpu", "cuda:0", "mps", "dml:0"].contains(&self.device.as_str()) {
             return Err("Unsupported device".into());
         }
         let mut python_path = self.project.clone();

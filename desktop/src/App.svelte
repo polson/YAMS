@@ -786,7 +786,7 @@
                 <span class="meta-sep">·</span>
                 <span class="meta-label">Device:</span>
                 <span class="meta-val">{settings.device}</span>
-                {#if settings.modelProfile === 'mlx-6stem' || settings.modelProfile === 'torch-6stem'}
+                {#if settings.modelProfile === 'mlx-6stem' || settings.modelProfile === 'torch-6stem' || settings.modelProfile === 'onnx-6stem'}
                   <span class="meta-sep">·</span>
                   <span class="meta-val">6-stem</span>
                 {/if}

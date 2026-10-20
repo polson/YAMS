@@ -113,7 +113,7 @@ def main():
                 else:
                     raise AssertionError(f"Expected native maximized state {expected}")
         assert script("return document.querySelectorAll('.path-field, .settings').length") == 0
-        assert script("return !document.querySelector('.device-select select') || ['cuda:0', 'mps', 'cpu'].includes(document.querySelector('.device-select select').value)")
+        assert script("return !document.querySelector('.device-select select') || ['cuda:0', 'mps', 'dml:0', 'cpu'].includes(document.querySelector('.device-select select').value)")
         assert script("return document.querySelector('.drop-zone h2').textContent") == "Drop song folders here"
         assert script("return document.querySelectorAll('.intro, .stem-strip, footer').length") == 0
         assert script("return document.querySelector('.drop-zone').getBoundingClientRect().height") >= 180

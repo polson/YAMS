@@ -23,7 +23,8 @@ No installers or system configuration required. FFmpeg (with Opus and SoXR suppo
 - **GPU Acceleration**:
   - **NVIDIA**: Supported via CUDA (requires recent NVIDIA graphics drivers).
   - **Apple Silicon**: Supported natively via Metal.
-  - **AMD / CPU**: Runs in CPU mode if a compatible GPU is not detected (AMD GPU support is in progress).
+  - **AMD**: Supported via ROCm on Linux and DirectML (ONNX) on Windows.
+  - **CPU**: Falls back to CPU mode if a compatible GPU is not detected.
 - **Memory**: 8 GB RAM minimum (16 GB recommended).
 - **Storage & Network**: ~2 GB free disk space for engine dependencies and models; internet connection required on first launch.
 
