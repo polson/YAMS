@@ -195,3 +195,24 @@ class OnnxAudioTests(unittest.TestCase):
                     rate=self.rate,
                     cancelled=cancelled,
                 )
+
+    def test_separate_8stem_uses_onnx_when_configured(self):
+        (self.models / "aufr33-jarredou_DrumSep_model_mdx23c_ep_141_sdr_10.8059.yaml").write_text("audio: {sample_rate: 44100}")
+        (self.models / "aufr33-jarredou_DrumSep_model_mdx23c_ep_141_sdr_10.8059.ckpt").write_bytes(b"dummy drumsep")
+
+        mock_onnx_run = MagicMock(return_value=({"model": "sha"}, 1.0, 5, "DmlExecutionProvider"))
+        mock_drumsep = MagicMock(return_value=({"drumsep": "sha"}, {"target": "drumsep", "pass_number": 2, "seconds": 1.0, "chunks": 2, "raw_chunks_finite": True, "tail_rounding_frames": 0}))
+
+        with patch("yams.onnx_audio.run_onnx_6stem_pcm", mock_onnx_run), \
+             patch("yams.audio.separate_drumsep_pcm", mock_drumsep), \
+             patch("yams.audio._load_inference_runtime", return_value=(MagicMock(), MagicMock(), torch.device("cpu"))), \
+             patch("yams.audio.reconstruct", return_value={"peak_error": 0.0, "rms_error": 0.0, "files": {}}), \
+             patch("yams.audio.export_opus", return_value={"peak_error": 0.0, "rms_error": 0.0, "files": {}}):
+            result = audio.separate(
+                stage=self.stage,
+                models=self.models,
+                model_profile="onnx-8stem",
+                device_name="dml:0",
+            )
+        mock_onnx_run.assert_called_once()
+        self.assertEqual(result["model_profile"], "onnx-8stem")
