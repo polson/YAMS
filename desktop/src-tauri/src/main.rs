@@ -176,6 +176,8 @@ async fn open_folder(folder: String) -> Result<(), String> {
 }
 
 fn main() {
+    std::env::remove_var("PYTHONHOME");
+    std::env::remove_var("PYTHONPATH");
     #[cfg(target_os = "linux")]
     if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");

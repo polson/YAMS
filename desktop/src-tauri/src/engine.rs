@@ -224,6 +224,7 @@ fn ensure_ffmpeg(
         command.env("PATH", new_path);
     }
     command
+        .env_remove("PYTHONHOME")
         .env("PYTHONPATH", resources)
         .arg("-m")
         .arg("yams.ffmpeg")
@@ -291,6 +292,8 @@ fn probe(python: &Path, resources: &Path, cache: &Path, mode: &str) -> Result<St
     let output = command
         .arg(resources.join("check_runtime.py"))
         .arg(mode)
+        .env_remove("PYTHONHOME")
+        .env_remove("PYTHONPATH")
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .env("XDG_CACHE_HOME", cache)
         .env("NUMBA_CACHE_DIR", cache.join("numba"))
@@ -320,6 +323,8 @@ fn run_installer(uv: &Path, cache: &Path, arguments: &[&str]) -> Result<(), Stri
     let output = command
         .arg("--no-config")
         .args(arguments)
+        .env_remove("PYTHONHOME")
+        .env_remove("PYTHONPATH")
         .env("UV_CACHE_DIR", cache.join("uv"))
         .env("UV_PYTHON_INSTALL_DIR", cache.join("python"))
         .env("UV_PYTHON_INSTALL_BIN", "0")

@@ -32,9 +32,11 @@ def torch_backend():
 
 
 def run_setup(arguments, cache, cancelled):
+    env = {key: value for key, value in os.environ.items() if key not in ("PYTHONHOME", "PYTHONPATH")}
+    env["UV_CACHE_DIR"] = str(cache / "uv")
     with tempfile.TemporaryFile(mode="w+b") as diagnostics:
         process = subprocess.Popen(args=arguments, stdin=subprocess.DEVNULL, stdout=diagnostics, stderr=diagnostics,
-                                   env={**os.environ, "UV_CACHE_DIR": str(cache / "uv")},
+                                   env=env,
                                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
         try:
             while True:

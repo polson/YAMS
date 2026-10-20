@@ -55,6 +55,7 @@ impl Settings {
         let mut command = Command::new(&self.python);
         command
             .current_dir(&self.cache)
+            .env_remove("PYTHONHOME")
             .env("PYTHONPATH", python_path)
             .args(["-u", "-m", module_name]);
         command.env("PYTHONDONTWRITEBYTECODE", "1");
