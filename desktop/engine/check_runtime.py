@@ -24,5 +24,6 @@ if "--base" not in sys.argv:
         import mlx.core
         import mlx_audio_separator
         from mlx_audio_separator.separator.models.roformer.loader import load_roformer_model
-    subprocess.run(args=["ffmpeg", "-nostdin", "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "0.02", "-af", "aresample=48000:resampler=soxr:precision=28", "-c:a", "libopus", "-f", "opus", "-"], check=True, stdout=subprocess.DEVNULL)
+    import yams.ffmpeg
+    subprocess.run(args=["ffmpeg"] + yams.ffmpeg.OPUS_TEST_ARGS, check=True, stdout=subprocess.DEVNULL)
 print(sys.executable)

@@ -15,7 +15,7 @@ Prebuilt, portable zero-install packages are available on the [Releases](https:/
 - **macOS (Apple Silicon)**: DMG disk image and portable `.tar.gz` containing `YAMS.app`.
 - **Windows (x64)**: Portable `.zip` archive containing `YAMS.exe` and bundled engine resources.
 
-No installers or system configuration required. FFmpeg (with Opus and SoXR support) is detected automatically or downloaded into the app's local cache on first launch.
+No installers or system configuration required. FFmpeg (with Opus and high-precision resampling) is detected automatically or downloaded into the app's local cache on first launch.
 
 ## System requirements
 

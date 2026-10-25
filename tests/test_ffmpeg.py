@@ -80,6 +80,24 @@ class FfmpegTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     ffmpeg.ensure_ffmpeg(cache_dir=cache_dir)
 
+    def test_resample_filter_selects_soxr_when_supported_and_swr_otherwise(self):
+        with patch("yams.ffmpeg.supports_soxr", return_value=True):
+            self.assertEqual(ffmpeg.resample_filter(48000), "aresample=48000:resampler=soxr:precision=28")
+        with patch("yams.ffmpeg.supports_soxr", return_value=False):
+            self.assertEqual(ffmpeg.resample_filter(48000), "aresample=48000")
+
+    def test_test_ffmpeg_binary_executes_opus_test_args(self):
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            self.assertTrue(ffmpeg.test_ffmpeg_binary("fake_ffmpeg"))
+            mock_run.assert_called_once_with(
+                ["fake_ffmpeg"] + ffmpeg.OPUS_TEST_ARGS,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

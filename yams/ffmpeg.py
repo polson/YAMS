@@ -1,3 +1,4 @@
+import functools
 import gzip
 import hashlib
 import os
@@ -19,6 +20,18 @@ OPUS_SOXR_TEST_ARGS = [
     "-i", "anullsrc=r=44100:cl=stereo",
     "-t", "0.02",
     "-af", "aresample=48000:resampler=soxr:precision=28",
+    "-c:a", "libopus",
+    "-f", "opus",
+    "-"
+]
+
+OPUS_TEST_ARGS = [
+    "-nostdin",
+    "-v", "error",
+    "-f", "lavfi",
+    "-i", "anullsrc=r=44100:cl=stereo",
+    "-t", "0.02",
+    "-af", "aresample=48000",
     "-c:a", "libopus",
     "-f", "opus",
     "-"
@@ -63,6 +76,22 @@ def test_ffmpeg_binary(binary_path):
     try:
         creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         result = subprocess.run(
+            [str(binary_path)] + OPUS_TEST_ARGS,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.CalledProcessError):
+        return False
+
+
+@functools.lru_cache(maxsize=4)
+def supports_soxr(binary_path="ffmpeg"):
+    try:
+        creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        result = subprocess.run(
             [str(binary_path)] + OPUS_SOXR_TEST_ARGS,
             check=True,
             stdout=subprocess.DEVNULL,
@@ -72,6 +101,12 @@ def test_ffmpeg_binary(binary_path):
         return result.returncode == 0
     except (OSError, subprocess.CalledProcessError):
         return False
+
+
+def resample_filter(rate, binary_path="ffmpeg"):
+    if supports_soxr(binary_path):
+        return f"aresample={rate}:resampler=soxr:precision=28"
+    return f"aresample={rate}"
 
 
 def prepend_path(directory):
@@ -119,7 +154,7 @@ def ensure_ffmpeg(cache_dir, resources_dir=None, emit=None, cancelled=None):
     temp_file = cache_bin / f".{asset['binary']}.part"
 
     if emit:
-        emit("ffmpeg_download", message="Downloading FFmpeg with Opus & SoXR (~30 MiB)…", received=0, total=asset["bytes"])
+        emit("ffmpeg_download", message="Downloading FFmpeg (~30 MiB)…", received=0, total=asset["bytes"])
 
     request = urllib.request.Request(asset["url"], headers={"User-Agent": "YAMS/0.1"})
     received = 0
@@ -139,7 +174,7 @@ def ensure_ffmpeg(cache_dir, resources_dir=None, emit=None, cancelled=None):
                     checksum.update(block)
                     now = time.monotonic()
                     if emit and (now - reported >= 0.25):
-                        emit("ffmpeg_download", message="Downloading FFmpeg with Opus & SoXR…", received=received, total=asset["bytes"])
+                        emit("ffmpeg_download", message="Downloading FFmpeg…", received=received, total=asset["bytes"])
                         reported = now
 
             if received != asset["bytes"] or checksum.hexdigest() != asset["sha256"]:

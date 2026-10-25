@@ -15,6 +15,7 @@ try:
 except ImportError:
     torch = None
 
+from .ffmpeg import resample_filter
 from .folders import OUTPUTS, WAV_OUTPUTS, OUTPUTS_6STEM, WAV_OUTPUTS_6STEM, digest
 
 
@@ -32,7 +33,7 @@ STEM_MAPPING_6STEM = {
 def convert(source, destination, rate):
     subprocess.run(
         ["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", str(source),
-         "-map", "0:a:0", "-vn", "-af", f"aresample={rate}:resampler=soxr:precision=28",
+         "-map", "0:a:0", "-vn", "-af", resample_filter(rate),
          "-c:a", "pcm_f32le", str(destination)], check=True,
     )
 
@@ -114,7 +115,7 @@ def export_opus(reference_path, pcm, outputs, emit, filenames=OUTPUTS):
         path = outputs / name
         subprocess.run(
             ["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", str(pcm / name.replace(".opus", ".wav")),
-             "-map", "0:a:0", "-vn", "-af", f"aresample={OPUS_RATE}:resampler=soxr:precision=28",
+             "-map", "0:a:0", "-vn", "-af", resample_filter(OPUS_RATE),
              "-c:a", "libopus", "-b:a", str(OPUS_BITRATE), "-vbr", "on",
              "-application", "audio", "-compression_level", "10", "-f", "opus", str(path)], check=True,
         )
