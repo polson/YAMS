@@ -291,7 +291,9 @@ fn ensure_ffmpeg(
 
     let mut child = command
         .spawn()
-        .map_err(|error| format!("Could not check FFmpeg: {error}"))?;
+        .map_err(|error| {
+            format!("Could not start Python at {} to check FFmpeg: {error}", python.display())
+        })?;
 
     if let Some(stdout) = child.stdout.take() {
         let reader = std::io::BufReader::new(stdout);
@@ -349,11 +351,12 @@ fn probe(python: &Path, resources: &Path, cache: &Path, mode: &str) -> Result<St
         .env_remove("PYTHONHOME")
         .env_remove("PYTHONPATH")
         .env("PYTHONDONTWRITEBYTECODE", "1")
+        .env("PYTHONIOENCODING", "utf-8")
         .env("XDG_CACHE_HOME", cache)
         .env("NUMBA_CACHE_DIR", cache.join("numba"))
         .env("TORCH_HOME", cache.join("torch"))
         .output()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| format!("Could not start Python at {}: {error}", python.display()))?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr)
             .chars()
@@ -364,7 +367,10 @@ fn probe(python: &Path, resources: &Path, cache: &Path, mode: &str) -> Result<St
             .rev()
             .collect());
     }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    let executable = String::from_utf8(output.stdout).map_err(|error| {
+        format!("Python at {} returned an invalid UTF-8 executable path: {error}", python.display())
+    })?;
+    Ok(executable.trim().to_string())
 }
 
 fn run_installer(uv: &Path, cache: &Path, arguments: &[&str]) -> Result<(), String> {
@@ -401,6 +407,30 @@ fn run_installer(uv: &Path, cache: &Path, arguments: &[&str]) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn probe_preserves_unicode_and_rejects_invalid_utf8() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = std::env::temp_dir().join(format!("yams-probe-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let python = directory.join("python");
+        std::fs::write(
+            &python,
+            "#!/bin/sh\n[ \"$PYTHONIOENCODING\" = utf-8 ] || exit 1\nprintf 'C:\\\\Users\\\\José\\\\python.exe\\n'\n",
+        ).unwrap();
+        std::fs::set_permissions(&python, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(
+            probe(&python, &directory, &directory, "--base").unwrap(),
+            "C:\\Users\\José\\python.exe"
+        );
+
+        std::fs::write(&python, "#!/bin/sh\nprintf '\\351'\n").unwrap();
+        let error = probe(&python, &directory, &directory, "--base").unwrap_err();
+        assert!(error.contains("invalid UTF-8 executable path"));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn detects_expected_devices() {

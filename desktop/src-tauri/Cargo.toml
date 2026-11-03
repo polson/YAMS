@@ -4,6 +4,12 @@ version = "0.3.1"
 edition = "2021"
 license = "MIT"
 
+[profile.dev]
+debug = 1
+
+[profile.test]
+debug = 1
+
 [lib]
 name = "yams_desktop"
 path = "src/lib.rs"
