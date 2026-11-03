@@ -114,7 +114,7 @@ def publish_staged_tree(stage, payload, destination, record):
         raise ValueError("Staged output trees must not contain symlinks")
     for path in paths:
         if path.is_file():
-            with path.open("rb") as file:
+            with path.open("r+b") as file:
                 os.fsync(file.fileno())
             sync_directory(path.parent)
     files = {path.relative_to(payload).as_posix(): digest(path) for path in paths if path.is_file()}
@@ -313,7 +313,7 @@ def begin(folder, source):
               "backup_existed": (folder / "backup").exists(), "outputs": {}}
     write_record(stage, record)
     shutil.copy2(source, stage / "original")
-    with (stage / "original").open("rb") as file:
+    with (stage / "original").open("r+b") as file:
         os.fsync(file.fileno())
     if digest(stage / "original") != record["source_sha256"] or digest(source) != record["source_sha256"]:
         raise ValueError("Source changed while creating the processing snapshot")
@@ -330,7 +330,7 @@ def prepare(stage, record, audio_report):
     if any(record["outputs"][name] != audio_report["validation"]["files"][name]["sha256"] for name in outputs):
         raise ValueError("Staged outputs changed after audio validation")
     for name in outputs:
-        with (stage / "outputs" / name).open("rb") as file:
+        with (stage / "outputs" / name).open("r+b") as file:
             os.fsync(file.fileno())
     sync_directory(stage / "outputs")
     record["state"] = "ready"
@@ -390,7 +390,7 @@ def begin_export(folder, destination, source):
               "outputs": {}}
     write_record(stage, record)
     shutil.copy2(source, stage / "original")
-    with (stage / "original").open("rb") as file:
+    with (stage / "original").open("r+b") as file:
         os.fsync(file.fileno())
     if digest(stage / "original") != record["source_sha256"]:
         raise ValueError("Source changed while creating the processing snapshot")
@@ -515,7 +515,7 @@ def recover(folder):
                 if path.exists():
                     path.unlink()
             os.link(moved, source)
-            with source.open("rb") as file:
+            with source.open("r+b") as file:
                 os.fsync(file.fileno())
             sync_directory(folder)
     elif digest(folder / name) != record["source_sha256"]:

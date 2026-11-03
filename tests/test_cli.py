@@ -57,13 +57,17 @@ class CommandTests(unittest.TestCase):
     def test_model_failure_rolls_back_and_reports_error(self):
         folder = self.fixture()
         output = io.StringIO()
+        diagnostics = io.StringIO()
         with patch.object(sys, "argv", self.command(folder)), contextlib.redirect_stdout(output), \
+             contextlib.redirect_stderr(diagnostics), \
              patch("yams.audio.separate", side_effect=ValueError("invalid prediction")):
             status = main()
         self.assertEqual(status, 1)
         self.assertEqual(json.loads(output.getvalue().splitlines()[-1])["event"], "error")
         self.assertEqual((folder / "song.ogg").read_bytes(), b"original")
         self.assertFalse((folder / ".yams-work").exists())
+        self.assertIn("Traceback (most recent call last)", diagnostics.getvalue())
+        self.assertIn("ValueError: invalid prediction", diagnostics.getvalue())
 
     def test_recovered_commit_is_success_and_stdout_is_json(self):
         folder = self.fixture()

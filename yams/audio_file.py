@@ -95,7 +95,7 @@ def process_audio_file(audio_path, destination, mode, models, inference_source=N
     payload.mkdir()
     ref_audio = stage / "original"
     shutil.copy2(src=audio_path, dst=ref_audio)
-    with ref_audio.open("rb") as f:
+    with ref_audio.open("r+b") as f:
         os.fsync(f.fileno())
     if digest(ref_audio) != source_hash or digest(audio_path) != source_hash:
         raise ValueError("Source changed while creating the processing snapshot")

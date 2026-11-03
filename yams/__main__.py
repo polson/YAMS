@@ -4,6 +4,7 @@ import json
 import platform
 import sys
 import threading
+import traceback
 from pathlib import Path
 
 import struct
@@ -477,6 +478,7 @@ def main():
         emit("cancelled")
         return 130
     except Exception as error:
+        traceback.print_exc(file=sys.stderr)
         emit("error", message=str(error))
         return 1
 
