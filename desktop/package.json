@@ -9,7 +9,7 @@
     "dev": "vite --host 127.0.0.1 --port 1420 --strictPort",
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "node --experimental-strip-types tests/queue.test.ts",
+    "test": "node --experimental-strip-types --test tests/queue.test.ts tests/i18n.test.ts",
     "tauri": "tauri"
   },
   "dependencies": {

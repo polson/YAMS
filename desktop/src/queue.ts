@@ -1,3 +1,5 @@
+import { translate, type SupportedLocale, type TranslationKey } from './i18n/index.ts';
+
 export type Status = 'ready' | 'queued' | 'running' | 'completed' | 'skipped' | 'recovered' | 'cancelled' | 'error' | 'recovery_required';
 
 export interface Settings {
@@ -86,14 +88,17 @@ export type BatchEvent =
   | { kind: 'diagnostic'; id: string; message: string }
   | { kind: 'worker'; id: string; payload: WorkerEvent };
 
-const SKIP_REASONS: Record<string, string> = {
-  already_contains_multitrack_stems: 'This song already contains multitrack stems; no separation was needed.',
-  existing_instrument_or_alternate_stems: 'Existing instrument or alternate stems were found; no new stems were created.',
-  already_separated_in_destination: 'The export destination already contains the separated stems.',
-};
-
-function skipReason(reason: string | undefined): string {
-  return SKIP_REASONS[reason ?? ''] || 'The worker skipped this item without providing a reason.';
+function skipReason(reason: string | undefined, locale: SupportedLocale = 'en'): string {
+  if (reason === 'already_contains_multitrack_stems') {
+    return translate(locale, 'skip_reason_multitrack');
+  }
+  if (reason === 'existing_instrument_or_alternate_stems') {
+    return translate(locale, 'skip_reason_existing_stems');
+  }
+  if (reason === 'already_separated_in_destination') {
+    return translate(locale, 'skip_reason_already_in_destination');
+  }
+  return translate(locale, 'skip_reason_default');
 }
 
 function appendLog(log: string, message: string): string {
@@ -188,9 +193,9 @@ function workerLogMessage(payload: WorkerEvent): string | undefined {
   }
 }
 
-export function updateSong(song: Song, event: Exclude<BatchEvent, { kind: 'batch_finished' }>, now = performance.now()): Song {
+export function updateSong(song: Song, event: Exclude<BatchEvent, { kind: 'batch_finished' }>, now = performance.now(), locale: SupportedLocale = 'en'): Song {
   if (event.kind === 'started') {
-    return { ...song, status: 'running', detail: 'Starting…', progress: 0, message: '', log: appendLog(song.log, 'Processing attempt started.'), chunkSize: undefined, canRetry: false, startedAt: now, finishedAt: now, inferenceAt: now };
+    return { ...song, status: 'running', detail: translate(locale, 'status_starting'), progress: 0, message: '', log: appendLog(song.log, translate(locale, 'log_attempt_started')), chunkSize: undefined, canRetry: false, startedAt: now, finishedAt: now, inferenceAt: now };
   }
   if (event.kind === 'finished') {
     const message = event.message || (event.status === 'skipped' ? song.message : '');
@@ -198,7 +203,7 @@ export function updateSong(song: Song, event: Exclude<BatchEvent, { kind: 'batch
       canRetry: ['cancelled', 'error', 'recovered'].includes(event.status),
       log: song.log,
       detail: event.status === 'completed'
-        ? (song.destination ? 'Stems exported to destination' : 'Stems installed · original backed up')
+        ? (song.destination ? translate(locale, 'detail_exported_to_dest') : translate(locale, 'detail_installed_backup'))
         : message || event.status,
       progress: event.status === 'completed' ? 100 : song.progress };
   }
@@ -210,7 +215,7 @@ export function updateSong(song: Song, event: Exclude<BatchEvent, { kind: 'batch
   const loggedSong = logMessage ? { ...song, log: appendLog(song.log, logMessage) } : song;
   const chunkSize = payload.chunk_size ?? song.chunkSize;
   if (payload.event === 'model_download') {
-    return { ...loggedSong, detail: `Downloading ${payload.asset} · ${Math.round(100 * payload.received / payload.total)}%` };
+    return { ...loggedSong, detail: translate(locale, 'detail_downloading_model', { asset: payload.asset, percent: Math.round(100 * payload.received / payload.total) }) };
   }
   if (payload.event === 'model_started' || payload.event === 'model_progress' || payload.event === 'model_finished') {
     const { target } = payload;
@@ -221,7 +226,7 @@ export function updateSong(song: Song, event: Exclude<BatchEvent, { kind: 'batch
         ...loggedSong,
         progress: isTwoPass ? 95 * 0.5 * fraction : 95 * fraction,
         inferenceAt: payload.event === 'model_started' ? now : song.inferenceAt,
-        detail: payload.detail || song.detail || 'Separating 6 stems',
+        detail: payload.detail || song.detail || translate(locale, 'detail_separating_6stem'),
         chunkSize,
       };
     }
@@ -229,7 +234,7 @@ export function updateSong(song: Song, event: Exclude<BatchEvent, { kind: 'batch
       return {
         ...loggedSong,
         progress: 95 * (0.5 + 0.5 * fraction),
-        detail: payload.detail || 'Separating drums',
+        detail: payload.detail || translate(locale, 'detail_separating_drumsep'),
         chunkSize,
       };
     }
@@ -238,36 +243,38 @@ export function updateSong(song: Song, event: Exclude<BatchEvent, { kind: 'batch
   if (payload.event === 'encoding') {
     const index = payload.index;
     const total = payload.total;
-    const detail = index && total ? `Encoding Opus (${index}/${total})…` : 'Encoding Opus…';
+    const detail = index && total ? translate(locale, 'detail_encoding_opus_progress', { index, total }) : translate(locale, 'detail_encoding_opus');
     const progress = index && total ? Math.max(song.progress, 95 + 4 * (index / total)) : Math.max(song.progress, 95);
     return { ...loggedSong, detail, progress };
   }
   if (payload.event === 'installing') {
-    return { ...loggedSong, detail: 'Saving…', progress: Math.max(song.progress, 99.5) };
+    return { ...loggedSong, detail: translate(locale, 'detail_saving'), progress: Math.max(song.progress, 99.5) };
   }
   if (payload.event === 'finalizing') {
-    return { ...loggedSong, detail: payload.detail || 'Finalizing stems…', progress: Math.max(song.progress, 95) };
+    return { ...loggedSong, detail: payload.detail || translate(locale, 'detail_finalizing'), progress: Math.max(song.progress, 95) };
   }
   if (payload.event === 'preparing_pass') {
-    return { ...loggedSong, detail: payload.detail || 'Preparing next pass…' };
+    return { ...loggedSong, detail: payload.detail || translate(locale, 'detail_preparing_pass') };
   }
   if (payload.event === 'skipped') {
-    const message = skipReason(payload.reason);
+    const message = skipReason(payload.reason, locale);
     return { ...loggedSong, message, detail: message };
   }
-  const descriptions: Record<string, string> = {
-    runtime_setup: 'Preparing audio engine…',
-    checking_models: 'Checking models…',
-    models_ready: 'Preparing…',
-    decoded: 'Preparing…',
-    validated: 'Checking…',
-    recovered: 'Recovery completed',
-    recovery_required: 'Interrupted · will restart clean',
-    cancelled: 'Cancelled · rollback finished',
-    completed: 'Finishing…',
+  const descriptions: Record<string, TranslationKey> = {
+    runtime_setup: 'detail_runtime_setup',
+    checking_models: 'detail_checking_models',
+    models_ready: 'detail_preparing',
+    decoded: 'detail_preparing',
+    validated: 'detail_checking',
+    recovered: 'detail_recovered',
+    recovery_required: 'detail_interrupted_restart',
+    cancelled: 'detail_cancelled_rollback',
+    completed: 'detail_finishing',
   };
   const destination = payload.destination ?? song.destination;
-  return { ...loggedSong, destination, detail: payload.message || descriptions[payload.event] || song.detail, chunkSize };
+  const descriptionKey = descriptions[payload.event];
+  const translatedDescription = descriptionKey ? translate(locale, descriptionKey) : undefined;
+  return { ...loggedSong, destination, detail: payload.message || translatedDescription || song.detail, chunkSize };
 }
 
 export function mergePreviews(songs: Song[], previews: Preview[]): Song[] {
@@ -293,7 +300,7 @@ export function duration(milliseconds: number): string {
   return `${hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}` : minutes}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-export function timing(song: Song, now: number): string {
+export function timing(song: Song, now: number, locale: SupportedLocale = 'en'): string {
   const elapsed = (song.status === 'running' ? now : song.finishedAt) - song.startedAt;
   const label = duration(elapsed);
   if (song.status !== 'running') { return label; }
@@ -301,7 +308,7 @@ export function timing(song: Song, now: number): string {
   if (song.progress >= 95) {
     const remainingSeconds = Math.max(1, Math.round((100 - song.progress) * 3));
     const formatted = remainingSeconds >= 60 ? duration(remainingSeconds * 1000) : `${remainingSeconds}s`;
-    return `${label} · ~${formatted} left`;
+    return `${label} · ${translate(locale, 'timing_left', { time: formatted })}`;
   }
   const remaining = (now - song.inferenceAt) * (95 - song.progress) / song.progress;
   return `${label} / ${duration(elapsed + remaining)}`;

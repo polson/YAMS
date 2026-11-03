@@ -9,9 +9,33 @@
   import { relaunch } from '@tauri-apps/plugin-process';
   import { check } from '@tauri-apps/plugin-updater';
   import { mergePreviews, queueProgress, refreshSong, resolveExportTargets, rowWindow, ROW_HEIGHT, timing, updateSong, scrollbarGeometry, scrollPositionFromThumb, type BatchEvent, type Preview, type Settings, type Song } from './queue';
+  import { resolveInitialLocale, saveLocale, translate, SUPPORTED_LOCALES, type SupportedLocale, type TranslationKey } from './i18n/index.ts';
   import logo from './assets/logo.png';
 
   const native = isTauri();
+  let locale = $state<SupportedLocale>(resolveInitialLocale());
+
+  const STATUS_KEYS: Record<string, TranslationKey> = {
+    ready: 'status_ready',
+    queued: 'status_queued',
+    running: 'status_running',
+    completed: 'status_completed',
+    skipped: 'status_skipped',
+    recovered: 'status_recovered',
+    cancelled: 'status_cancelled',
+    error: 'status_error',
+    recovery_required: 'status_recovery_required',
+  };
+
+  function t(key: TranslationKey, params?: Record<string, string | number>): string {
+    return translate(locale, key, params);
+  }
+
+  function switchLocale(nextLocale: SupportedLocale) {
+    locale = nextLocale;
+    saveLocale(nextLocale);
+  }
+
   let settings = $state<Settings>({ device: 'cpu', modelProfile: 'mega-8stem', exportFolder: '' });
   let songs = $state<Song[]>([]);
   let running = $state(false);
@@ -74,7 +98,7 @@
     async function initialize() {
       if (!native) {
         initialized = true;
-        notice = 'Browser preview. Launch the desktop app to select and process folders.';
+        notice = t('notice_browser_preview');
         return;
       }
       try {
@@ -146,11 +170,11 @@
       return false;
     }
     let downloaded = 0;
-    notice = `Downloading YAMS ${update.version}…`;
+    notice = t('notice_downloading_update', { version: update.version });
     await update.downloadAndInstall(event => {
       if (event.event === 'Progress') {
         downloaded += event.data.chunkLength;
-        notice = `Downloading YAMS ${update.version}… ${Math.floor(downloaded / 1048576)} MiB`;
+        notice = t('notice_downloading_update_mb', { version: update.version, size: Math.floor(downloaded / 1048576) });
       }
     });
     await relaunch();
@@ -187,7 +211,7 @@
   async function prepareEngine() {
     preparing = true;
     if (initialized) { error = ''; }
-    notice = 'Checking audio engine…';
+    notice = t('notice_checking_engine');
     const events = new Channel<string>();
     events.onmessage = message => { notice = message; };
     try {
@@ -212,7 +236,7 @@
 
   async function chooseFolders() {
     try {
-      const paths = await open({ directory: true, multiple: true, title: 'Add song folders or a song collection' });
+      const paths = await open({ directory: true, multiple: true, title: t('dialog_add_folders') });
       if (paths) { await addPaths(Array.isArray(paths) ? paths : [paths]); }
     } catch (problem) { error = String(problem); }
   }
@@ -222,10 +246,10 @@
       const paths = await open({
         directory: false,
         multiple: true,
-        title: 'Add audio files or CON packages',
+        title: t('dialog_add_files'),
         filters: [
-          { name: 'Audio files & CON packages', extensions: ['opus', 'ogg', 'mp3', 'wav', 'flac', 'aiff', 'm4a', 'aac', 'con', 'live', 'pirs'] },
-          { name: 'All files', extensions: ['*'] }
+          { name: t('filter_audio_con'), extensions: ['opus', 'ogg', 'mp3', 'wav', 'flac', 'aiff', 'm4a', 'aac', 'con', 'live', 'pirs'] },
+          { name: t('filter_all_files'), extensions: ['*'] }
         ]
       });
       if (paths) { await addPaths(Array.isArray(paths) ? paths : [paths]); }
@@ -233,7 +257,7 @@
   }
 
   async function addPaths(paths: string[]) {
-    if (busy || !initialized || !engineReady) { notice = 'Wait for the audio engine before adding songs.'; return; }
+    if (busy || !initialized || !engineReady) { notice = t('notice_wait_engine'); return; }
     inspecting = true;
     error = '';
     notice = '';
@@ -244,7 +268,7 @@
         const target = paths.length === 1
           ? (paths[0].split(/[/\\]/).filter(Boolean).pop() || paths[0])
           : (paths.length > 1 ? `${paths.length} folders` : 'the selected location');
-        notice = `⚠️ No songs found in ${target}.`;
+        notice = t('notice_no_songs_found', { target });
       } else {
         notice = '';
       }
@@ -323,26 +347,29 @@
   }
 
   function formatChunkSize(samples: number): string {
-    return `${samples.toLocaleString()} samples (${(samples / 44100).toFixed(1)} s at 44.1 kHz)`;
+    return t('format_chunk_size', {
+      samples: samples.toLocaleString(),
+      seconds: (samples / 44100).toFixed(1)
+    });
   }
 
   function getDetailsText(song: Song): string {
     const sep = song.folder.includes('\\') ? '\\' : '/';
     const audioPath = song.source ? `${song.folder}${sep}${song.source}` : '';
     const lines = [
-      audioPath ? `File:    ${audioPath}` : `Folder:  ${song.folder}`,
-      `Status:  ${song.status}`,
-      `Device:  ${settings.device}`,
+      audioPath ? `${t('label_file')}    ${audioPath}` : `${t('label_folder')}  ${song.folder}`,
+      `${t('label_status')}  ${song.status}`,
+      `${t('label_device')}  ${settings.device}`,
     ];
     if (song.chunkSize !== undefined) {
-      lines.push(`Chunk size: ${formatChunkSize(song.chunkSize)}`);
+      lines.push(`${t('label_chunk_size')} ${formatChunkSize(song.chunkSize)}`);
     }
     const message = song.message || song.detail;
     if (message) {
       lines.push(`Detail:  ${message}`);
     }
     if (song.log) {
-      lines.push('', '--- Worker Log ---', song.log.trim());
+      lines.push('', t('worker_log_header'), song.log.trim());
     }
     return lines.join('\n');
   }
@@ -373,7 +400,7 @@
       const selected = await open({
         directory: true,
         multiple: false,
-        title: 'Choose export folder',
+        title: t('dialog_export_folder'),
         defaultPath: settings.exportFolder || undefined,
       });
       if (typeof selected === 'string' && selected.length > 0) {
@@ -391,7 +418,7 @@
       return;
     }
     if (!settings.exportFolder) {
-      error = 'Choose a destination folder before starting export.';
+      error = t('error_choose_export_folder');
       return;
     }
     const ids = new Set(selected.map(song => song.id));
@@ -404,7 +431,7 @@
         song.destination = dest;
       }
     }
-    songs = songs.map(song => ids.has(song.id) ? { ...song, status: 'queued', detail: 'Queued' } : song);
+    songs = songs.map(song => ids.has(song.id) ? { ...song, status: 'queued', detail: t('status_queued_detail') } : song);
     running = true;
     pausing = false;
     paused = false;
@@ -445,7 +472,7 @@
         started.add(event.id);
       }
       const index = positions.get(event.id)!;
-      Object.assign(songs[index], updateSong(songs[index], event, now));
+      Object.assign(songs[index], updateSong(songs[index], event, now, locale));
     };
     try {
       await invoke('start_batch', {
@@ -513,7 +540,7 @@
       const preview = previews[0];
       if (!preview || !['ready', 'recovery_required'].includes(preview.status)) {
         song.canRetry = false;
-        song.detail = preview?.message || 'Folder is no longer ready';
+        song.detail = preview?.message || t('error_folder_not_ready');
         song.status = preview?.status || 'error';
         return;
       }
@@ -574,18 +601,18 @@
   }
 </script>
 
-<svelte:head><title>YAMS · Music separator</title></svelte:head>
+<svelte:head><title>{t('app_title')}</title></svelte:head>
 
 {#if native}
-  <header class="titlebar" aria-label="Window controls">
+  <header class="titlebar" aria-label={t('aria_window_controls')}>
     <div class="titlebar-drag" data-tauri-drag-region aria-hidden="true"></div>
-    <button class="window-button" aria-label="Minimize window" title="Minimize" onclick={() => controlWindow('minimize')}>
+    <button class="window-button" aria-label={t('aria_minimize_window')} title={t('window_minimize')} onclick={() => controlWindow('minimize')}>
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 11h10" /></svg>
     </button>
-    <button class="window-button" aria-label="Maximize or restore window" title="Maximize / restore" onclick={() => controlWindow('toggleMaximize')}>
+    <button class="window-button" aria-label={t('aria_maximize_window')} title={t('window_maximize')} onclick={() => controlWindow('toggleMaximize')}>
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10v10H3Z" /></svg>
     </button>
-    <button class="window-button window-close" aria-label="Close window" title="Close" onclick={() => controlWindow('close')} disabled={closing}>
+    <button class="window-button window-close" aria-label={t('aria_close_window')} title={t('window_close')} onclick={() => controlWindow('close')} disabled={closing}>
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 3 10 10M13 3 3 13" /></svg>
     </button>
   </header>
@@ -595,36 +622,36 @@
   {#if dragging}
     <div class="drag-overlay" aria-hidden="true">
       <div class="drag-cue">
-        <strong>Drop songs, audio, or CON files anywhere</strong>
-        <span>Release to add songs to the queue</span>
+        <strong>{t('drag_drop_title')}</strong>
+        <span>{t('drag_drop_subtitle')}</span>
       </div>
     </div>
   {/if}
   <header class="app-header">
     <div class="brand">
-      <img class="brand-logo" src={logo} alt="YAMS" title="Yet Another Music Separator" />
+      <img class="brand-logo" src={logo} alt={t('app_name')} title={t('app_full_name')} />
     </div>
     {#if songs.length > 0}
       <div class="global-progress-panel">
         <div class="global-progress-header">
           <div class="global-progress-counts">
-            <span class="count-completed">{queueStats.completed.toLocaleString()} completed</span>
+            <span class="count-completed">{t('count_completed', { count: queueStats.completed.toLocaleString() })}</span>
             <span class="meta-sep">·</span>
-            <span class="count-remaining">{queueStats.remaining.toLocaleString()} remaining</span>
+            <span class="count-remaining">{t('count_remaining', { count: queueStats.remaining.toLocaleString() })}</span>
             {#if queueStats.failed > 0}
               <span class="meta-sep">·</span>
-              <span class="count-failed">{queueStats.failed.toLocaleString()} failed</span>
+              <span class="count-failed">{t('count_failed', { count: queueStats.failed.toLocaleString() })}</span>
             {/if}
             {#if queueStats.skipped > 0}
               <span class="meta-sep">·</span>
-              <span class="count-skipped">{queueStats.skipped.toLocaleString()} skipped</span>
+              <span class="count-skipped">{t('count_skipped', { count: queueStats.skipped.toLocaleString() })}</span>
             {/if}
             {#if paused && ready > 0}
               <span class="meta-sep">·</span>
-              <span class="count-paused" style="color: #ffc18d; font-weight: 500;">Queue paused</span>
+              <span class="count-paused" style="color: #ffc18d; font-weight: 500;">{t('queue_paused')}</span>
             {:else if pausing}
               <span class="meta-sep">·</span>
-              <span class="count-pausing" style="color: #d1b58a; font-weight: 500;">Pausing…</span>
+              <span class="count-pausing" style="color: #d1b58a; font-weight: 500;">{t('pausing')}</span>
             {/if}
           </div>
           <span class="global-progress-pct">{queueProgressPercent}</span>
@@ -632,7 +659,7 @@
         <div
           class="global-progress-bar"
           role="progressbar"
-          aria-label="Overall queue progress"
+          aria-label={t('aria_overall_progress')}
           aria-valuenow={Math.round(queueStats.percent)}
           aria-valuemin="0"
           aria-valuemax="100"
@@ -645,52 +672,52 @@
   <main>
     {#if error}<div class="message error" role="alert">{error}</div>{/if}
     {#if notice}<div class="message notice" role="status">{notice}</div>{/if}
-    {#if native && initialized && !engineReady && !preparing}<div class="message"><button onclick={prepareEngine}>Retry setup</button></div>{/if}
+    {#if native && initialized && !engineReady && !preparing}<div class="message"><button onclick={prepareEngine}>{t('btn_retry_setup')}</button></div>{/if}
 
-    <section class="queue panel" aria-label="Queue" bind:this={queuePanel}>
+    <section class="queue panel" aria-label={t('queue_title')} bind:this={queuePanel}>
       <div class="section-heading" bind:this={queueHeading}>
         <div>
-          <h2>Queue</h2>
-          {#if songs.length > 0}<span>{songs.length.toLocaleString()} {songs.length === 1 ? 'song' : 'songs'}</span>{/if}
+          <h2>{t('queue_title')}</h2>
+          {#if songs.length > 0}<span>{songs.length === 1 ? t('song_count_singular') : t('song_count_plural', { count: songs.length.toLocaleString() })}</span>{/if}
         </div>
         <div class="actions">
           {#if songs.length > 0}
-            <button class="quiet" onclick={chooseFolders} disabled={!native || busy || !initialized || !engineReady}>Add folder</button>
-            <button class="quiet" onclick={chooseFiles} disabled={!native || busy || !initialized || !engineReady}>Add file</button>
+            <button class="quiet" onclick={chooseFolders} disabled={!native || busy || !initialized || !engineReady}>{t('btn_add_folder')}</button>
+            <button class="quiet" onclick={chooseFiles} disabled={!native || busy || !initialized || !engineReady}>{t('btn_add_file')}</button>
           {/if}
-          <button class={confirmingClear ? 'danger' : 'quiet'} onclick={clearQueue} disabled={busy || songs.length === 0}>{confirmingClear ? 'Confirm clear?' : 'Clear'}</button>
+          <button class={confirmingClear ? 'danger' : 'quiet'} onclick={clearQueue} disabled={busy || songs.length === 0}>{confirmingClear ? t('btn_confirm_clear') : t('btn_clear')}</button>
         </div>
       </div>
       {#if songs.length === 0}
         <div class="empty drop-zone">
-          <h2>{inspecting ? 'Checking songs…' : 'Drop songs here'}</h2>
+          <h2>{inspecting ? t('empty_checking') : t('empty_drop_title')}</h2>
           {#if inspecting}
-            <p>Reading chart and audio metadata…</p>
+            <p>{t('empty_reading_metadata')}</p>
           {:else}
-            <p class="supported-types">Supports unpacked INI songs, audio files (.opus, .ogg, .mp3, .wav, .flac), CON packages, and exCON folders</p>
+            <p class="supported-types">{t('empty_supported_formats')}</p>
           {/if}
           <div class="actions">
-            <button class="primary" onclick={chooseFolders} disabled={!native || busy || !initialized || !engineReady}>Add folder</button>
-            <button class="primary" onclick={chooseFiles} disabled={!native || busy || !initialized || !engineReady}>Add file</button>
+            <button class="primary" onclick={chooseFolders} disabled={!native || busy || !initialized || !engineReady}>{t('btn_add_folder')}</button>
+            <button class="primary" onclick={chooseFiles} disabled={!native || busy || !initialized || !engineReady}>{t('btn_add_file')}</button>
           </div>
         </div>
       {:else}
         <div class="song-list-wrapper">
-          <div class="song-list" class:has-scrollbar={scrollbar.isScrollable} bind:this={viewport} bind:clientHeight={viewportHeight} onscroll={() => { scrollTop = viewport!.scrollTop; }} aria-label="Songs" role="grid" aria-rowcount={songs.length} aria-colcount="4" tabindex="0">
+          <div class="song-list" class:has-scrollbar={scrollbar.isScrollable} bind:this={viewport} bind:clientHeight={viewportHeight} onscroll={() => { scrollTop = viewport!.scrollTop; }} aria-label={t('aria_songs')} role="grid" aria-rowcount={songs.length} aria-colcount="4" tabindex="0">
             <div style:height={`${visible.top}px`} aria-hidden="true"></div>
             {#each visibleSongs as song, index (song.id)}
               <div class="song" class:selected={selectedId === song.id} role="row" aria-rowindex={visible.start + index + 1} style:height={`${ROW_HEIGHT}px`} tabindex="0" onclick={event => onSongRowClick(event, song)} onkeydown={event => onSongRowKeydown(event, song)}>
                 <div class="song-name" role="gridcell"><h3 title={song.folder}>{song.folder.split(/[\\/]/).filter(Boolean).at(-1)}</h3></div>
-                <div class="song-state" role="gridcell"><span class="badge" title={song.message || song.detail} data-status={song.status}>{song.status === 'running' ? song.detail : (song.status === 'recovery_required' ? 'interrupted' : song.status.replaceAll('_', ' '))}</span>
-                  {#if song.status === 'running'}<div class="progress" role="progressbar" aria-label={`Progress for ${song.folder}`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(song.progress)}><div class="progress-fill" style:width={`${song.progress}%`}></div></div>{/if}
+                <div class="song-state" role="gridcell"><span class="badge" title={song.message || song.detail} data-status={song.status}>{song.status === 'running' ? song.detail : (song.status === 'recovery_required' ? t('status_interrupted') : t(STATUS_KEYS[song.status] ?? 'status_ready'))}</span>
+                  {#if song.status === 'running'}<div class="progress" role="progressbar" aria-label={t('aria_progress_for', { folder: song.folder })} aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(song.progress)}><div class="progress-fill" style:width={`${song.progress}%`}></div></div>{/if}
                 </div>
-                <span class="timing" role="gridcell">{#if song.status === 'running' || song.status === 'completed'}{timing(song, clock)}{/if}</span>
+                <span class="timing" role="gridcell">{#if song.status === 'running' || song.status === 'completed'}{timing(song, clock, locale)}{/if}</span>
                 <div class="row-actions" role="gridcell">
-                  {#if song.canRetry || song.status === 'recovery_required'}<button class="quiet" onclick={() => retry(song.id)} disabled={busy || !native}>Retry</button>{/if}
-                  <button class="quiet icon-button open-folder" aria-label="Open folder" title="Open folder" onclick={() => openFolder(song.status === 'completed' && song.destination ? song.destination : song.folder)} disabled={!native}>
+                  {#if song.canRetry || song.status === 'recovery_required'}<button class="quiet" onclick={() => retry(song.id)} disabled={busy || !native}>{t('btn_retry')}</button>{/if}
+                  <button class="quiet icon-button open-folder" aria-label={t('btn_open_folder')} title={t('btn_open_folder')} onclick={() => openFolder(song.status === 'completed' && song.destination ? song.destination : song.folder)} disabled={!native}>
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Z" /></svg>
                   </button>
-                  <button class="quiet icon-button remove" aria-label="Remove from list" title="Remove from list" onclick={() => removeSong(song.id)} disabled={busy}>
+                  <button class="quiet icon-button remove" aria-label={t('btn_remove_song')} title={t('btn_remove_song')} onclick={() => removeSong(song.id)} disabled={busy}>
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
                   </button>
                 </div>
@@ -730,7 +757,7 @@
           <div
             class="details-resize-handle"
             role="slider"
-            aria-label="Resize information panel"
+            aria-label={t('aria_resize_panel')}
             aria-orientation="vertical"
             aria-valuenow={detailsHeight}
             aria-valuemin="100"
@@ -748,21 +775,21 @@
               <span class="terminal-folder">{selectedSong.folder.split(/[\\/]/).at(-1)}</span>
             </span>
             <div class="details-header-actions">
-              <button class="copy-button" class:copied onclick={copyDetails} title={copied ? 'Copied to clipboard' : 'Copy details'}>
+              <button class="copy-button" class:copied onclick={copyDetails} title={copied ? t('copied_to_clipboard') : t('copy_details')}>
                 {#if copied}
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12"></polyline>
                   </svg>
-                  <span>Copied</span>
+                  <span>{t('btn_copied')}</span>
                 {:else}
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                   </svg>
-                  <span>Copy</span>
+                  <span>{t('btn_copy')}</span>
                 {/if}
               </button>
-              <button class="copy-button close-details-button" aria-label="Close information panel" title="Close" onclick={closeDetails}>
+              <button class="copy-button close-details-button" aria-label={t('btn_close_details')} title={t('btn_close_details')} onclick={closeDetails}>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
               </button>
             </div>
@@ -771,35 +798,35 @@
             <div class="terminal-meta">
               {#if selectedSong.source}
                 <div class="meta-row">
-                  <span class="meta-label">File:</span>
+                  <span class="meta-label">{t('label_file')}</span>
                   <span class="meta-val">{selectedSong.folder}{selectedSong.folder.includes('\\') ? '\\' : '/'}{selectedSong.source}</span>
                 </div>
               {:else}
                 <div class="meta-row">
-                  <span class="meta-label">Folder:</span>
+                  <span class="meta-label">{t('label_folder')}</span>
                   <span class="meta-val">{selectedSong.folder}</span>
                 </div>
               {/if}
               <div class="meta-row">
-                <span class="meta-label">Status:</span>
+                <span class="meta-label">{t('label_status')}</span>
                 <span class="meta-val">{selectedSong.status}</span>
                 <span class="meta-sep">·</span>
-                <span class="meta-label">Device:</span>
+                <span class="meta-label">{t('label_device')}</span>
                 <span class="meta-val">{settings.device}</span>
                 {#if settings.modelProfile === 'mlx-6stem' || settings.modelProfile === 'torch-6stem' || settings.modelProfile === 'onnx-6stem'}
                   <span class="meta-sep">·</span>
-                  <span class="meta-val">6-stem</span>
+                  <span class="meta-val">{t('label_six_stem')}</span>
                 {/if}
               </div>
               {#if selectedSong.chunkSize !== undefined}
                 <div class="meta-row">
-                  <span class="meta-label">Chunk size:</span>
+                  <span class="meta-label">{t('label_chunk_size')}</span>
                   <span class="meta-val">{formatChunkSize(selectedSong.chunkSize)}</span>
                 </div>
               {/if}
               {#if selectedSong.destination}
                 <div class="meta-row">
-                  <span class="meta-label">Export:</span>
+                  <span class="meta-label">{t('label_export')}</span>
                   <span class="meta-val">{selectedSong.destination}</span>
                 </div>
               {/if}
@@ -815,10 +842,10 @@
       {/if}
       <div class="queue-footer" bind:this={queueFooter}>
         <div class="queue-options">
-          {#if activeIndex >= 0}<button class="quiet show-active" onclick={() => viewport!.scrollTo({ top: activeIndex * ROW_HEIGHT })}>Show active</button>{/if}
+          {#if activeIndex >= 0}<button class="quiet show-active" onclick={() => viewport!.scrollTo({ top: activeIndex * ROW_HEIGHT })}>{t('btn_show_active')}</button>{/if}
           {#if (settings.availableModelProfiles?.length ?? 1) > 1}
             {@const sixStemProfile = settings.availableModelProfiles?.find(p => p !== 'mega-8stem') ?? 'mlx-6stem'}
-            <div class="mode-select" role="group" aria-label="Model selection">
+            <div class="mode-select" role="group" aria-label={t('aria_model_selection')}>
               <div class="mode-pill-wrapper">
                 <button
                   type="button"
@@ -829,11 +856,11 @@
                     settings.modelProfile = sixStemProfile;
                     saveSettings();
                   }}
-                >6 stems</button>
+                >{t('pill_six_stems')}</button>
                 <div class="mode-tooltip" role="tooltip">
-                  <strong>6 stems</strong>
-                  <span>Separates vocals, drums, bass, guitar, piano, and other.</span>
-                  <span>Faster separation with all drums on one track.</span>
+                  <strong>{t('tooltip_six_stems_title')}</strong>
+                  <span>{t('tooltip_six_stems_desc1')}</span>
+                  <span>{t('tooltip_six_stems_desc2')}</span>
                 </div>
               </div>
               <div class="mode-pill-wrapper">
@@ -843,23 +870,23 @@
                   class:active={settings.modelProfile === 'mega-8stem'}
                   disabled={busy}
                   onclick={() => { settings.modelProfile = 'mega-8stem'; saveSettings(); }}
-                >8 stems</button>
+                >{t('pill_eight_stems')}</button>
                 <div class="mode-tooltip" role="tooltip">
-                  <strong>8 stems</strong>
-                  <span>Separates vocals, bass, guitar, piano, kick, snare, kit, and other.</span>
-                  <span>Higher detail drum separation, but takes longer to finish.</span>
+                  <strong>{t('tooltip_eight_stems_title')}</strong>
+                  <span>{t('tooltip_eight_stems_desc1')}</span>
+                  <span>{t('tooltip_eight_stems_desc2')}</span>
                 </div>
               </div>
             </div>
           {/if}
-          <div class="mode-select" role="group" aria-label="Export destination">
+          <div class="mode-select" role="group" aria-label={t('aria_export_destination')}>
             <div class="mode-pill-wrapper">
-              <span class="mode-pill active">Export</span>
+              <span class="mode-pill active">{t('pill_export')}</span>
               <div class="mode-tooltip" role="tooltip">
-                <strong>Exports to separate folder</strong>
-                <span>Writes complete separated songs to the destination folder.</span>
-                <span>CON files are extracted to the specified folder.</span>
-                <span>Source files remain untouched.</span>
+                <strong>{t('tooltip_export_title')}</strong>
+                <span>{t('tooltip_export_desc1')}</span>
+                <span>{t('tooltip_export_desc2')}</span>
+                <span>{t('tooltip_export_desc3')}</span>
               </div>
             </div>
             <svg class="mode-pill-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
@@ -869,29 +896,41 @@
                 class="mode-folder-pill"
                 disabled={busy}
                 onclick={chooseExportFolder}
-                aria-label="Choose export folder"
+                aria-label={t('aria_choose_export_folder')}
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Z" /></svg>
-                <span>{settings.exportFolder ? settings.exportFolder.split(/[/\\]/).filter(Boolean).pop() : 'Choose folder…'}</span>
+                <span>{settings.exportFolder ? settings.exportFolder.split(/[/\\]/).filter(Boolean).pop() : t('pill_choose_folder')}</span>
               </button>
               <div class="mode-tooltip" role="tooltip">
-                <strong>Output folder</strong>
-                <span>Destination folder where exported songs are saved.</span>
+                <strong>{t('tooltip_output_folder_title')}</strong>
+                <span>{t('tooltip_output_folder_desc')}</span>
                 {#if settings.exportFolder}<span>{settings.exportFolder}</span>{/if}
               </div>
             </div>
           </div>
+          <div class="mode-select" role="group" aria-label={t('aria_language_selection')}>
+            <select
+              class="lang-select"
+              value={locale}
+              onchange={event => switchLocale(event.currentTarget.value as SupportedLocale)}
+              aria-label={t('aria_language_selection')}
+            >
+              {#each SUPPORTED_LOCALES as lang (lang.code)}
+                <option value={lang.code}>{lang.label}</option>
+              {/each}
+            </select>
+          </div>
         </div>
         <div class="actions">
           {#if running}
-            <button class="stop" onclick={pauseQueue} disabled={pausing}>{pausing ? 'Pausing…' : 'Pause'}</button>
+            <button class="stop" onclick={pauseQueue} disabled={pausing}>{pausing ? t('btn_pausing') : t('btn_pause')}</button>
           {:else if paused && ready > 0}
             <button
               class="primary"
               onclick={() => run()}
               disabled={!native || busy || !engineReady || !settings.exportFolder}
             >
-              {!settings.exportFolder ? 'Choose destination' : `Resume (${ready} ${ready === 1 ? 'song' : 'songs'})`}
+              {!settings.exportFolder ? t('btn_choose_destination') : (ready === 1 ? t('btn_resume_single') : t('btn_resume_plural', { count: ready }))}
             </button>
           {:else}
             <button
@@ -899,7 +938,7 @@
               onclick={() => run()}
               disabled={!native || busy || !engineReady || ready === 0 || !settings.exportFolder}
             >
-              {!settings.exportFolder ? 'Choose destination' : `Separate ${ready > 0 ? ready : ''} songs`}
+              {!settings.exportFolder ? t('btn_choose_destination') : (ready === 1 ? t('btn_separate_single') : (ready > 0 ? t('btn_separate_plural', { count: ready }) : t('btn_separate_default')))}
             </button>
           {/if}
         </div>
