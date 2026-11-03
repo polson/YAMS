@@ -31,26 +31,14 @@ const LOCALES: Record<SupportedLocale, Translations> = {
 };
 
 export function resolveInitialLocale(): SupportedLocale {
-  if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
-    return 'en';
-  }
-  const saved = localStorage.getItem('yams-locale');
-  if (saved && saved in LOCALES) {
-    return saved as SupportedLocale;
-  }
-  const language = (navigator.language || '').toLowerCase();
-  for (const info of SUPPORTED_LOCALES) {
-    if (info.code !== 'en' && language.startsWith(info.code)) {
-      return info.code;
+  for (const language of navigator.languages) {
+    const code = language.toLowerCase().split('-')[0];
+    const match = SUPPORTED_LOCALES.find(locale => locale.code === code);
+    if (match) {
+      return match.code;
     }
   }
   return 'en';
-}
-
-export function saveLocale(locale: SupportedLocale): void {
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('yams-locale', locale);
-  }
 }
 
 export function translate(

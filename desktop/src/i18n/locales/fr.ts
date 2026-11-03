@@ -103,7 +103,6 @@ export const fr: Translations = {
   btn_separate_single: 'Séparer 1 morceau',
   btn_separate_plural: 'Séparer {count} morceaux',
   btn_separate_default: 'Séparer les morceaux',
-  aria_language_selection: 'Sélection de la langue',
   status_starting: 'Démarrage…',
   status_queued_detail: 'En attente',
   detail_exported_to_dest: 'Pistes exportées vers la destination',

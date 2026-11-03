@@ -101,7 +101,6 @@ export const en = {
   btn_separate_single: 'Separate 1 song',
   btn_separate_plural: 'Separate {count} songs',
   btn_separate_default: 'Separate songs',
-  aria_language_selection: 'Language selection',
   status_starting: 'Starting…',
   status_queued_detail: 'Queued',
   detail_exported_to_dest: 'Stems exported to destination',

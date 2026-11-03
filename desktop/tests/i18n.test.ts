@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SUPPORTED_LOCALES, translate, type SupportedLocale } from '../src/i18n/index.ts';
+import { resolveInitialLocale, SUPPORTED_LOCALES, translate, type SupportedLocale } from '../src/i18n/index.ts';
 import { en } from '../src/i18n/locales/en.ts';
 import { es } from '../src/i18n/locales/es.ts';
 import { de } from '../src/i18n/locales/de.ts';
@@ -19,6 +19,38 @@ const LOCALES: Record<SupportedLocale, Record<string, string>> = {
   pt,
   zh,
 };
+
+test('system language preferences determine the locale regardless of saved overrides', t => {
+  const storage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    get: () => ({ getItem: () => 'ja' }),
+  });
+  t.after(() => {
+    if (storage) {
+      Object.defineProperty(globalThis, 'localStorage', storage);
+    } else {
+      Reflect.deleteProperty(globalThis, 'localStorage');
+    }
+  });
+
+  for (const { code } of SUPPORTED_LOCALES) {
+    t.mock.getter(navigator, 'languages', () => [`${code.toUpperCase()}-US`]);
+    assert.equal(resolveInitialLocale(), code);
+  }
+
+  t.mock.getter(navigator, 'languages', () => ['it-IT', 'fr-CA', 'de-DE']);
+  assert.equal(resolveInitialLocale(), 'fr');
+
+  t.mock.getter(navigator, 'languages', () => ['en-GB', 'es-ES']);
+  assert.equal(resolveInitialLocale(), 'en');
+
+  t.mock.getter(navigator, 'languages', () => ['it-IT', 'ko-KR']);
+  assert.equal(resolveInitialLocale(), 'en');
+
+  t.mock.getter(navigator, 'languages', () => []);
+  assert.equal(resolveInitialLocale(), 'en');
+});
 
 test('all supported locales contain all translation keys with non-empty values', () => {
   const englishKeys = Object.keys(en);

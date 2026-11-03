@@ -9,11 +9,11 @@
   import { relaunch } from '@tauri-apps/plugin-process';
   import { check } from '@tauri-apps/plugin-updater';
   import { mergePreviews, queueProgress, refreshSong, resolveExportTargets, rowWindow, ROW_HEIGHT, timing, updateSong, scrollbarGeometry, scrollPositionFromThumb, type BatchEvent, type Preview, type Settings, type Song } from './queue';
-  import { resolveInitialLocale, saveLocale, translate, SUPPORTED_LOCALES, type SupportedLocale, type TranslationKey } from './i18n/index.ts';
+  import { resolveInitialLocale, translate, type TranslationKey } from './i18n/index.ts';
   import logo from './assets/logo.png';
 
   const native = isTauri();
-  let locale = $state<SupportedLocale>(resolveInitialLocale());
+  const locale = resolveInitialLocale();
 
   const STATUS_KEYS: Record<string, TranslationKey> = {
     ready: 'status_ready',
@@ -29,11 +29,6 @@
 
   function t(key: TranslationKey, params?: Record<string, string | number>): string {
     return translate(locale, key, params);
-  }
-
-  function switchLocale(nextLocale: SupportedLocale) {
-    locale = nextLocale;
-    saveLocale(nextLocale);
   }
 
   let settings = $state<Settings>({ device: 'cpu', modelProfile: 'mega-8stem', exportFolder: '' });
@@ -907,18 +902,6 @@
                 {#if settings.exportFolder}<span>{settings.exportFolder}</span>{/if}
               </div>
             </div>
-          </div>
-          <div class="mode-select" role="group" aria-label={t('aria_language_selection')}>
-            <select
-              class="lang-select"
-              value={locale}
-              onchange={event => switchLocale(event.currentTarget.value as SupportedLocale)}
-              aria-label={t('aria_language_selection')}
-            >
-              {#each SUPPORTED_LOCALES as lang (lang.code)}
-                <option value={lang.code}>{lang.label}</option>
-              {/each}
-            </select>
           </div>
         </div>
         <div class="actions">

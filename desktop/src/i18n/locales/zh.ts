@@ -103,7 +103,6 @@ export const zh: Translations = {
   btn_separate_single: '分离 1 首歌曲',
   btn_separate_plural: '分离 {count} 首歌曲',
   btn_separate_default: '开始分离',
-  aria_language_selection: '语言选择',
   status_starting: '正在启动…',
   status_queued_detail: '已排队',
   detail_exported_to_dest: '已导出分轨至目标文件夹',

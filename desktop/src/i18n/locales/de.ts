@@ -103,7 +103,6 @@ export const de: Translations = {
   btn_separate_single: '1 Song trennen',
   btn_separate_plural: '{count} Songs trennen',
   btn_separate_default: 'Songs trennen',
-  aria_language_selection: 'Sprachauswahl',
   status_starting: 'Startet…',
   status_queued_detail: 'In Warteschlange',
   detail_exported_to_dest: 'Stems in Zielordner exportiert',

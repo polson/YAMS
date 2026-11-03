@@ -103,7 +103,6 @@ export const ja: Translations = {
   btn_separate_single: '1曲を分離',
   btn_separate_plural: '{count}曲を分離',
   btn_separate_default: '楽曲を分離',
-  aria_language_selection: '言語選択',
   status_starting: '開始中…',
   status_queued_detail: '待機中',
   detail_exported_to_dest: '出力先にパートを出力完了',
