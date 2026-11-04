@@ -103,6 +103,7 @@ def process_audio_file(audio_path, destination, mode, models, inference_source=N
     if cancelled and cancelled.is_set():
         raise KeyboardInterrupt
 
+    emit("stage", message="Loading audio engine…")
     from .audio import separate
 
     result = separate(stage=stage, models=models, inference_source=inference_source,

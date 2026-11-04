@@ -273,6 +273,7 @@ def run_torch_6stem_pcm(stage, models, reference, rate, settings, model_utils, d
     config.training.use_amp = bool(config.training.use_amp and device.type == "cuda")
     if device.type == "cuda":
         budget_gpu(model=model, device=device)
+    emit("stage", message="Loading separation weights…")
     weights = torch.load(weights_path, map_location="cpu", weights_only=True)
     model.load_state_dict(weights, strict=True)
     del weights
@@ -395,6 +396,7 @@ def separate_drumsep_pcm(stage, models, reference, rate, settings, model_utils, 
     config.training.use_amp = bool(config.training.use_amp and device.type == "cuda")
     if device.type == "cuda":
         budget_gpu(model=model, device=device)
+    emit("stage", message="Loading drum refinement weights…")
     weights = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     model.load_state_dict(weights, strict=True)
     del weights
@@ -494,8 +496,10 @@ def separate_8stem(stage, models, inference_source=None, device_name="auto", emi
         emit = lambda *args, **kwargs: None
     if inference_source is None:
         inference_source = DEFAULT_INFERENCE
+    emit("stage", message="Loading inference runtime…")
     model_utils, settings, device = _load_inference_runtime(inference_source, device_name)
     emit("device", name=str(device))
+    emit("stage", message="Decoding audio…")
     reference_path, reference, rate = _decode_reference(stage)
     stereo_bytes = len(reference) * 2 * 4
     model_bytes = math.ceil(len(reference) * 44100 / rate) * 2 * 4
