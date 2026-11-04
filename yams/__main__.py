@@ -279,7 +279,7 @@ def main():
                 ensure_runtime(installer=args.runtime_installer, resources=args.runtime_resources,
                                emit=emit_progress, cancelled=cancelled)
             except Exception as error:
-                emit("runtime_error", message=str(error))
+                emit("runtime_error", message=str(error), code=getattr(error, "code", None))
                 raise
         from .models import default_models, ensure_models
         models = (args.models or default_models(profile=args.model_profile)).resolve()

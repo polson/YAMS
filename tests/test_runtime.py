@@ -6,9 +6,9 @@ import sys
 import tempfile
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from yams.runtime import ensure_runtime, run_setup, torch_backend
+from yams.runtime import MissingVisualCRuntime, ensure_runtime, run_setup, torch_backend, visual_c_runtime_installed
 
 
 class RuntimeTests(unittest.TestCase):
@@ -61,6 +61,33 @@ class RuntimeTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "verification failed"):
                     ensure_runtime(installer=root / "uv", resources=root, emit=lambda *args, **kwargs: None, cancelled=threading.Event())
             self.assertFalse((runtime / ".yams-ready").exists())
+
+    def test_missing_visual_c_runtime_stops_before_installing_packages(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runtime = root / "runtime"
+            runtime.mkdir()
+            (root / "requirements.txt").write_text("dependency==1\n")
+            (root / "check_runtime.py").write_text("pass\n")
+            with patch.object(sys, "prefix", str(runtime)), patch("yams.runtime.visual_c_runtime_installed", return_value=False), patch("yams.runtime.run_setup") as setup:
+                with self.assertRaisesRegex(MissingVisualCRuntime, "Visual C\\+\\+ Redistributable") as failure:
+                    ensure_runtime(installer=root / "uv", resources=root, emit=lambda *args, **kwargs: None, cancelled=threading.Event())
+            self.assertEqual(failure.exception.code, "vc_redist_missing")
+            setup.assert_not_called()
+            self.assertFalse((runtime / ".yams-ready").exists())
+
+    def test_visual_c_runtime_is_read_from_the_windows_registry(self):
+        registry = MagicMock()
+        registry.HKEY_LOCAL_MACHINE = object()
+        with patch.object(sys, "platform", "win32"), patch("yams.runtime.platform.machine", return_value="AMD64"), patch.dict(sys.modules, {"winreg": registry}):
+            registry.QueryValueEx.return_value = (1, 4)
+            self.assertTrue(visual_c_runtime_installed())
+            registry.QueryValueEx.return_value = (0, 4)
+            self.assertFalse(visual_c_runtime_installed())
+            registry.OpenKey.side_effect = FileNotFoundError
+            self.assertFalse(visual_c_runtime_installed())
+        with patch.object(sys, "platform", "linux"):
+            self.assertTrue(visual_c_runtime_installed())
 
     def test_cancellation_terminates_installer(self):
         with tempfile.TemporaryDirectory() as temporary:

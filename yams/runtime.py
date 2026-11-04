@@ -10,6 +10,27 @@ import threading
 from .folders import locked
 
 
+VC_RUNTIME_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+
+
+class MissingVisualCRuntime(RuntimeError):
+    code = "vc_redist_missing"
+
+    def __init__(self):
+        super().__init__(f"Microsoft Visual C++ Redistributable is not installed. Install it from {VC_RUNTIME_URL} and try again.")
+
+
+def visual_c_runtime_installed():
+    if sys.platform != "win32" or platform.machine().lower() not in ("amd64", "x86_64"):
+        return True
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64") as key:
+            return winreg.QueryValueEx(key, "Installed")[0] == 1
+    except OSError:
+        return False
+
+
 def _has_amd_gpu():
     if any(p.is_file() and p.read_text().strip().lower() == "0x1002" for p in Path("/sys/class/drm").glob("card*/device/vendor")):
         return True
@@ -109,6 +130,8 @@ def ensure_runtime(installer, resources, emit, cancelled):
         legacy_marker = runtime / ".yass-ready"
         if (marker.is_file() and marker.read_text() == version) or (legacy_marker.is_file() and legacy_marker.read_text() == version):
             return
+        if not visual_c_runtime_installed():
+            raise MissingVisualCRuntime
         emit("runtime_setup", message="Preparing audio engine… First setup may take several minutes.")
         marker.unlink(missing_ok=True)
         legacy_marker.unlink(missing_ok=True)
