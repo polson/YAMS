@@ -2,9 +2,10 @@ import hashlib
 import os
 from pathlib import Path
 import platform
+import re
 import subprocess
 import sys
-import tempfile
+import threading
 
 from .folders import locked
 
@@ -42,33 +43,54 @@ def torch_backend():
     return "cpu"
 
 
-def run_setup(arguments, cache, cancelled):
+def run_setup(arguments, cache, cancelled, emit=None):
     env = {key: value for key, value in os.environ.items() if key not in ("PYTHONHOME", "PYTHONPATH")}
     env["UV_CACHE_DIR"] = str(cache / "uv")
-    with tempfile.TemporaryFile(mode="w+b") as diagnostics:
-        process = subprocess.Popen(args=arguments, stdin=subprocess.DEVNULL, stdout=diagnostics, stderr=diagnostics,
-                                   env=env,
-                                   creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
-        try:
-            while True:
-                if cancelled.is_set():
-                    raise KeyboardInterrupt
-                try:
-                    status = process.wait(timeout=.2)
-                    break
-                except subprocess.TimeoutExpired:
-                    pass
-            if status != 0:
-                diagnostics.seek(max(0, diagnostics.tell() - 4000))
-                raise RuntimeError(diagnostics.read().decode(errors="replace"))
-        finally:
-            if process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
+    env["PYTHONIOENCODING"] = "utf-8"
+    process = subprocess.Popen(args=arguments, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               env=env,
+                               creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+    output = []
+
+    def read_output():
+        for raw in process.stdout:
+            output.extend(line.strip() for line in re.split(r"[\r\n]+", raw.decode(errors="replace")) if line.strip())
+
+    reader = threading.Thread(target=read_output, daemon=True)
+    reader.start()
+    reported = 0
+
+    def report():
+        nonlocal reported
+        if emit is not None and len(output) > reported:
+            reported = len(output)
+            emit(output[-1][:200])
+
+    try:
+        while True:
+            if cancelled.is_set():
+                raise KeyboardInterrupt
+            report()
+            try:
+                status = process.wait(timeout=.2)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+        reader.join(timeout=5)
+        report()
+        if status != 0:
+            raise RuntimeError("\n".join(output[-200:])[-4000:])
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        reader.join(timeout=5)
+        if not reader.is_alive():
+            process.stdout.close()
 
 
 def ensure_runtime(installer, resources, emit, cancelled):
@@ -92,7 +114,7 @@ def ensure_runtime(installer, resources, emit, cancelled):
         legacy_marker.unlink(missing_ok=True)
         run_setup(arguments=[str(installer), "--no-config", "pip", "install", "--reinstall", "--python", sys.executable,
                              "--torch-backend", torch_backend(), "--requirements", str(requirements)],
-                  cache=runtime.parent, cancelled=cancelled)
+                  cache=runtime.parent, cancelled=cancelled, emit=lambda message: emit("runtime_setup", message=message))
         emit("runtime_setup", message="Verifying audio engine…")
         run_setup(arguments=[sys.executable, str(check)], cache=runtime.parent, cancelled=cancelled)
         if cancelled.is_set():

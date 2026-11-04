@@ -78,6 +78,19 @@ class RuntimeTests(unittest.TestCase):
             with self.assertRaises(ProcessLookupError):
                 os.kill(int(pid.read_text()), 0)
 
+    def test_installer_output_is_reported_and_kept_for_failures(self):
+        code = "import sys; print('Resolved 42 packages'); print('Downloading torch\\r', end=''); print('Downloading torch 2/3\\r'); sys.exit(3)"
+        reported = []
+        with self.assertRaisesRegex(RuntimeError, "Resolved 42 packages") as failure:
+            run_setup(arguments=[sys.executable, "-c", code], cache=Path(tempfile.gettempdir()), cancelled=threading.Event(), emit=reported.append)
+        self.assertIn("Downloading torch 2/3", str(failure.exception))
+        self.assertEqual(reported[-1], "Downloading torch 2/3")
+
+    def test_child_output_keeps_non_ascii_paths_intact(self):
+        code = "import sys; print('C:\\\\Users\\\\José\\\\python.exe'); sys.exit(1)"
+        with self.assertRaisesRegex(RuntimeError, "José"):
+            run_setup(arguments=[sys.executable, "-c", code], cache=Path(tempfile.gettempdir()), cancelled=threading.Event())
+
     def test_runtime_failure_leaves_song_untouched_and_preview_recovery_available(self):
         with tempfile.TemporaryDirectory() as temporary:
             song = Path(temporary)
