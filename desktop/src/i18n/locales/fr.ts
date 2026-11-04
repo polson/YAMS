@@ -48,6 +48,8 @@ export const fr: Translations = {
   aria_songs: 'Morceaux',
   aria_progress_for: 'Progression pour {folder}',
   btn_retry: 'Réessayer',
+  btn_install_vc_runtime: 'Installer le runtime',
+  detail_installing_vc_runtime: 'Installation du runtime Visual C++…',
   btn_open_folder: 'Ouvrir le dossier',
   btn_remove_song: 'Retirer de la liste',
   status_ready: 'prêt',

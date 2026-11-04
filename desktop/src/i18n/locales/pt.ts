@@ -48,6 +48,8 @@ export const pt: Translations = {
   aria_songs: 'Músicas',
   aria_progress_for: 'Progresso de {folder}',
   btn_retry: 'Tentar novamente',
+  btn_install_vc_runtime: 'Instalar runtime',
+  detail_installing_vc_runtime: 'Instalando o runtime do Visual C++…',
   btn_open_folder: 'Abrir pasta',
   btn_remove_song: 'Remover da lista',
   status_ready: 'pronta',

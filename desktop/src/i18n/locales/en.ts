@@ -46,6 +46,8 @@ export const en = {
   aria_songs: 'Songs',
   aria_progress_for: 'Progress for {folder}',
   btn_retry: 'Retry',
+  btn_install_vc_runtime: 'Install runtime',
+  detail_installing_vc_runtime: 'Installing Visual C++ runtime…',
   btn_open_folder: 'Open folder',
   btn_remove_song: 'Remove from list',
   status_ready: 'ready',

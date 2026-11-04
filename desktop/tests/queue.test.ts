@@ -21,6 +21,16 @@ test('recovery and failure are retained as actionable statuses', () => {
   assert.equal(result.message, 'File changed; retained');
 });
 
+test('a missing Visual C++ runtime offers installation until the next attempt starts', () => {
+  const failed = updateSong({ ...song, status: 'running' }, { kind: 'worker', id: 'a', payload: { event: 'runtime_error', folder: '/songs/a', message: 'Visual C++ missing', code: 'vc_redist_missing' } });
+  assert.equal(failed.needsVcRuntime, true);
+  const finished = updateSong(failed, { kind: 'finished', id: 'a', status: 'error', message: 'Visual C++ missing' });
+  assert.equal(finished.needsVcRuntime, true);
+  assert.equal(updateSong(finished, { kind: 'started', id: 'a' }).needsVcRuntime, false);
+  const other = updateSong({ ...song, status: 'running' }, { kind: 'worker', id: 'a', payload: { event: 'runtime_error', folder: '/songs/a', message: 'disk full', code: null } });
+  assert.notEqual(other.needsVcRuntime, true);
+});
+
 test('duplicate folder previews preserve existing results', () => {
   const result = mergePreviews([song], [{ ...song, status: 'skipped' }, { ...song, folder: '/songs/b' }]);
   assert.equal(result.length, 2);

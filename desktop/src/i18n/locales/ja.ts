@@ -48,6 +48,8 @@ export const ja: Translations = {
   aria_songs: '楽曲一覧',
   aria_progress_for: '{folder} の進行状況',
   btn_retry: '再試行',
+  btn_install_vc_runtime: 'ランタイムをインストール',
+  detail_installing_vc_runtime: 'Visual C++ ランタイムをインストール中…',
   btn_open_folder: 'フォルダーを開く',
   btn_remove_song: 'リストから削除',
   status_ready: '準備完了',

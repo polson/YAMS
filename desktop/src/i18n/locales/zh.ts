@@ -48,6 +48,8 @@ export const zh: Translations = {
   aria_songs: '歌曲列表',
   aria_progress_for: '{folder} 的进度',
   btn_retry: '重试',
+  btn_install_vc_runtime: '安装运行库',
+  detail_installing_vc_runtime: '正在安装 Visual C++ 运行库…',
   btn_open_folder: '打开文件夹',
   btn_remove_song: '从列表中移除',
   status_ready: '就绪',

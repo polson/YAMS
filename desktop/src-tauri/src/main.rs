@@ -99,6 +99,56 @@ fn cancel_batch(runner: State<'_, Runner>) -> Result<(), String> {
     runner.cancel()
 }
 
+#[cfg(windows)]
+const INSTALL_VC_RUNTIME: &str = r#"
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$file = Join-Path ([IO.Path]::GetTempPath()) ('yams-vc_redist-' + [guid]::NewGuid().ToString('N') + '.exe')
+try {
+    Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile $file -UseBasicParsing
+    $signature = Get-AuthenticodeSignature -FilePath $file
+    if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+        throw 'The downloaded installer is not signed by Microsoft Corporation.'
+    }
+    $process = Start-Process -FilePath $file -ArgumentList '/install', '/quiet', '/norestart' -Verb RunAs -Wait -PassThru
+    exit $process.ExitCode
+} finally {
+    Remove-Item -LiteralPath $file -ErrorAction SilentlyContinue
+}
+"#;
+
+#[tauri::command]
+async fn install_vc_runtime() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let output = std::process::Command::new("powershell.exe")
+                .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", INSTALL_VC_RUNTIME])
+                .creation_flags(0x08000000)
+                .output()
+                .map_err(|error| error.to_string())?;
+            // 3010: installed, restart advised. 1638: a newer version is already installed.
+            match output.status.code() {
+                Some(0) | Some(3010) | Some(1638) => Ok(()),
+                code => {
+                    let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    Err(if detail.is_empty() {
+                        format!("The Visual C++ installer exited with {code:?}")
+                    } else {
+                        detail
+                    })
+                }
+            }
+        }
+        #[cfg(not(windows))]
+        Err("The Visual C++ runtime is only needed on Windows".to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 #[tauri::command]
 async fn open_folder(folder: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -194,7 +244,8 @@ fn main() {
             inspect_folders,
             start_batch,
             cancel_batch,
-            open_folder
+            open_folder,
+            install_vc_runtime
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

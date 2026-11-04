@@ -25,6 +25,7 @@ export interface Song extends Preview {
   log: string;
   chunkSize?: number;
   canRetry: boolean;
+  needsVcRuntime?: boolean;
   startedAt: number;
   finishedAt: number;
   inferenceAt: number;
@@ -33,6 +34,7 @@ export interface Song extends Preview {
 
 interface WorkerEventFields {
   folder: string;
+  code?: string | null;
   source?: string;
   destination?: string;
   backup?: string;
@@ -195,7 +197,7 @@ function workerLogMessage(payload: WorkerEvent): string | undefined {
 
 export function updateSong(song: Song, event: Exclude<BatchEvent, { kind: 'batch_finished' }>, now = performance.now(), locale: SupportedLocale = 'en'): Song {
   if (event.kind === 'started') {
-    return { ...song, status: 'running', detail: translate(locale, 'status_starting'), progress: 0, message: '', log: appendLog(song.log, translate(locale, 'log_attempt_started')), chunkSize: undefined, canRetry: false, startedAt: now, finishedAt: now, inferenceAt: now };
+    return { ...song, status: 'running', detail: translate(locale, 'status_starting'), progress: 0, message: '', log: appendLog(song.log, translate(locale, 'log_attempt_started')), chunkSize: undefined, canRetry: false, needsVcRuntime: false, startedAt: now, finishedAt: now, inferenceAt: now };
   }
   if (event.kind === 'finished') {
     const message = event.message || (event.status === 'skipped' ? song.message : '');
@@ -259,6 +261,9 @@ export function updateSong(song: Song, event: Exclude<BatchEvent, { kind: 'batch
   if (payload.event === 'skipped') {
     const message = skipReason(payload.reason, locale);
     return { ...loggedSong, message, detail: message };
+  }
+  if (payload.event === 'runtime_error' && payload.code === 'vc_redist_missing') {
+    return { ...loggedSong, needsVcRuntime: true };
   }
   const descriptions: Record<string, TranslationKey> = {
     runtime_setup: 'detail_runtime_setup',

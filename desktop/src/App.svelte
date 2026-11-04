@@ -39,6 +39,7 @@
   let confirmingClear = $state(false);
   let clearTimer: ReturnType<typeof setTimeout> | undefined;
   let inspecting = $state(false);
+  let installingRuntimeId = $state('');
   let stopping = $state(false);
   let closing = $state(false);
   let dragging = $state(false);
@@ -526,6 +527,24 @@
     }
   }
 
+  async function installVcRuntime(id: string) {
+    const song = songs[positions.get(id)!];
+    inspecting = true;
+    error = '';
+    installingRuntimeId = id;
+    try {
+      await invoke('install_vc_runtime');
+      song.needsVcRuntime = false;
+    } catch (problem) {
+      error = String(problem);
+      return;
+    } finally {
+      inspecting = false;
+      installingRuntimeId = '';
+    }
+    await retry(id);
+  }
+
   async function retry(id: string) {
     inspecting = true;
     error = '';
@@ -708,6 +727,7 @@
                 </div>
                 <span class="timing" role="gridcell">{#if song.status === 'running' || song.status === 'completed'}{timing(song, clock, locale)}{/if}</span>
                 <div class="row-actions" role="gridcell">
+                  {#if song.needsVcRuntime}<button class="quiet" onclick={() => installVcRuntime(song.id)} disabled={busy || !native}>{installingRuntimeId === song.id ? t('detail_installing_vc_runtime') : t('btn_install_vc_runtime')}</button>{/if}
                   {#if song.canRetry || song.status === 'recovery_required'}<button class="quiet" onclick={() => retry(song.id)} disabled={busy || !native}>{t('btn_retry')}</button>{/if}
                   <button class="quiet icon-button open-folder" aria-label={t('btn_open_folder')} title={t('btn_open_folder')} onclick={() => openFolder(song.status === 'completed' && song.destination ? song.destination : song.folder)} disabled={!native}>
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Z" /></svg>
