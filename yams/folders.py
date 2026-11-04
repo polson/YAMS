@@ -53,6 +53,34 @@ def pending_stage(folder):
     return stage if stage.exists() else folder / ".yass-work"
 
 
+VERBATIM_PREFIX = "\\\\?\\"
+
+
+def interruption_message(stage):
+    journal = stage / "job.json"
+    if not journal.is_file():
+        journal = stage / "job.tmp"
+    where = f"Partial work is in {str(stage).removeprefix(VERBATIM_PREFIX)}."
+    try:
+        record = json.loads(journal.read_text(encoding="utf-8"))
+        state = record["state"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return f"An earlier run was interrupted, and its saved state could not be read. Retry will try to clean it up. {where}"
+    if state == "processing":
+        try:
+            unchanged = digest(Path(record["source"])) == record["source_sha256"]
+        except (OSError, ValueError, KeyError):
+            unchanged = False
+        if unchanged:
+            return f"An earlier run was interrupted while separating. Your original file is unchanged. Retry deletes the partial work and starts over. {where}"
+        return f"An earlier run was interrupted while separating, and the original file has changed since. Retry cannot clean this up automatically. Check the partial work before deleting it. {where}"
+    if state == "publishing":
+        return f"An earlier run was interrupted while writing results. Retry rolls back the partial results. {where}"
+    if state == "committed":
+        return f"An earlier run was interrupted after its results were written. Retry verifies them and finishes cleanup. {where}"
+    return f"An earlier run was interrupted partway through. Retry tries to finish or undo the saved work. {where}"
+
+
 def write_record(stage, record):
     temporary = stage / "job.tmp"
     with temporary.open("w", encoding="utf-8") as file:

@@ -1,15 +1,17 @@
 import argparse
 import contextlib
 import json
+import os
 import platform
 import sys
 import threading
+import time
 import traceback
 from pathlib import Path
 
 import struct
 
-from .folders import abort_export, begin, begin_export, discover, install, install_export, locked, pending_stage, prepare, recover, OUTPUTS, OUTPUTS_6STEM
+from .folders import abort_export, begin, begin_export, discover, install, install_export, interruption_message, locked, pending_stage, prepare, recover, OUTPUTS, OUTPUTS_6STEM
 from .confile import is_con_file, is_excon_folder, find_excon_info, ConPackage, is_con_multitrack
 from .audio_file import is_audio_file, is_multitrack_folder, find_single_audio_in_folder, process_audio_file, abort_audio_process
 
@@ -18,12 +20,24 @@ def has_work_marker(path):
     return pending_stage(path).exists()
 
 
+def stdin_has_data(fd):
+    if os.name != "nt":
+        return True
+    import ctypes
+    import msvcrt
+    available = ctypes.c_ulong()
+    handle = msvcrt.get_osfhandle(fd)
+    if not ctypes.windll.kernel32.PeekNamedPipe(handle, None, 0, None, ctypes.byref(available), None):
+        return True
+    return available.value > 0
+
+
 def preview(folder):
     fields = {"folder": str(folder), "source": "", "backup": "", "message": ""}
     if is_con_file(folder):
         sibling = folder.parent / (folder.stem if folder.suffix else f"{folder.name}_unpacked")
         if has_work_marker(sibling):
-            return {**fields, "status": "recovery_required", "message": "Interrupted work needs recovery"}
+            return {**fields, "status": "recovery_required", "message": interruption_message(pending_stage(sibling))}
         try:
             with ConPackage(folder) as pkg:
                 dta_listing = pkg.find("songs.dta")
@@ -42,7 +56,7 @@ def preview(folder):
             return {**fields, "status": "error", "message": str(error)}
     if is_excon_folder(folder):
         if has_work_marker(folder):
-            return {**fields, "status": "recovery_required", "message": "Interrupted work needs recovery"}
+            return {**fields, "status": "recovery_required", "message": interruption_message(pending_stage(folder))}
         try:
             info = find_excon_info(folder)
             mogg = info["mogg_path"]
@@ -63,7 +77,7 @@ def preview(folder):
     if is_audio_file(folder):
         sibling = folder.parent / folder.stem
         if has_work_marker(sibling):
-            return {**fields, "status": "recovery_required", "message": "Interrupted work needs recovery"}
+            return {**fields, "status": "recovery_required", "message": interruption_message(pending_stage(sibling))}
         return {**fields, "status": "ready", "source": folder.name,
                 "backup": f"backup/{folder.name}", "bytes": folder.stat().st_size}
     if is_multitrack_folder(folder):
@@ -71,11 +85,11 @@ def preview(folder):
     single_audio = find_single_audio_in_folder(folder)
     if single_audio is not None and not (folder / "song.ini").exists():
         if has_work_marker(folder):
-            return {**fields, "status": "recovery_required", "message": "Interrupted work needs recovery"}
+            return {**fields, "status": "recovery_required", "message": interruption_message(pending_stage(folder))}
         return {**fields, "status": "ready", "source": single_audio.name,
                 "backup": f"backup/{single_audio.name}", "bytes": single_audio.stat().st_size}
     if has_work_marker(folder):
-        return {**fields, "status": "recovery_required", "message": "Interrupted work needs recovery"}
+        return {**fields, "status": "recovery_required", "message": interruption_message(pending_stage(folder))}
     source = discover(folder)
     if source is None:
         return {**fields, "status": "skipped", "message": "Existing instrument or alternate stems"}
@@ -164,8 +178,18 @@ def main():
     cancelled = threading.Event()
 
     def read_control():
-        for line in sys.stdin:
-            if line.strip() == "cancel":
+        pending = b""
+        fd = sys.stdin.fileno()
+        while True:
+            if not stdin_has_data(fd):
+                time.sleep(0.1)
+                continue
+            chunk = os.read(fd, 4096)
+            if not chunk:
+                break
+            pending += chunk
+            *lines, pending = pending.split(b"\n")
+            if b"cancel" in (line.strip() for line in lines):
                 break
         cancelled.set()
 

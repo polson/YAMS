@@ -286,6 +286,21 @@ class FolderTests(unittest.TestCase):
             self.assertFalse(target.exists())
             self.assertFalse((destination / ".yams-work").exists())
 
+    def test_interruption_message_says_whether_original_is_intact(self):
+        folder = self.fixture()
+        source = folder / "song.ogg"
+        stage = folder / ".yams-work"
+        stage.mkdir()
+        record = {"version": 1, "state": "processing", "source": str(source),
+                  "source_sha256": folders.digest(source)}
+        (stage / "job.json").write_text(json.dumps(record))
+
+        self.assertIn("original file is unchanged", folders.interruption_message(stage))
+
+        record["source_sha256"] = "0" * 64
+        (stage / "job.json").write_text(json.dumps(record))
+        self.assertIn("original file has changed", folders.interruption_message(stage))
+
 
 if __name__ == "__main__":
     unittest.main()
