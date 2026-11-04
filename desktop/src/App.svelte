@@ -8,7 +8,7 @@
   import { open } from '@tauri-apps/plugin-dialog';
   import { relaunch } from '@tauri-apps/plugin-process';
   import { check } from '@tauri-apps/plugin-updater';
-  import { mergePreviews, queueProgress, refreshSong, resolveExportTargets, rowWindow, ROW_HEIGHT, timing, updateSong, scrollbarGeometry, scrollPositionFromThumb, type BatchEvent, type Preview, type Settings, type Song } from './queue';
+  import { displayPath, mergePreviews, queueProgress, refreshSong, resolveExportTargets, rowWindow, ROW_HEIGHT, timing, updateSong, scrollbarGeometry, scrollPositionFromThumb, type BatchEvent, type Preview, type Settings, type Song } from './queue';
   import { resolveInitialLocale, translate, type TranslationKey } from './i18n/index.ts';
   import logo from './assets/logo.png';
 
@@ -721,7 +721,7 @@
             <div style:height={`${visible.top}px`} aria-hidden="true"></div>
             {#each visibleSongs as song, index (song.id)}
               <div class="song" class:selected={selectedId === song.id} role="row" aria-rowindex={visible.start + index + 1} style:height={`${ROW_HEIGHT}px`} tabindex="0" onclick={event => onSongRowClick(event, song)} onkeydown={event => onSongRowKeydown(event, song)}>
-                <div class="song-name" role="gridcell"><h3 title={song.folder}>{song.folder.split(/[\\/]/).filter(Boolean).at(-1)}</h3></div>
+                <div class="song-name" role="gridcell"><h3 title={displayPath(song.folder)}>{song.folder.split(/[\\/]/).filter(Boolean).at(-1)}</h3></div>
                 <div class="song-state" role="gridcell"><span class="badge" title={song.message || song.detail} data-status={song.status}>{song.status === 'running' ? song.detail : (song.status === 'recovery_required' ? t('status_interrupted') : t(STATUS_KEYS[song.status] ?? 'status_ready'))}</span>
                   {#if song.status === 'running'}<div class="progress" role="progressbar" aria-label={t('aria_progress_for', { folder: song.folder })} aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(song.progress)}><div class="progress-fill" style:width={`${song.progress}%`}></div></div>{/if}
                 </div>
@@ -785,7 +785,7 @@
             onkeydown={resizeDetailsWithKeyboard}
           ></div>
           <div class="song-details-header">
-            <span class="terminal-title" title={selectedSong.folder}>
+            <span class="terminal-title" title={displayPath(selectedSong.folder)}>
               <span class="terminal-dot"></span>
               <span class="terminal-folder">{selectedSong.folder.split(/[\\/]/).at(-1)}</span>
             </span>
@@ -814,12 +814,12 @@
               {#if selectedSong.source}
                 <div class="meta-row">
                   <span class="meta-label">{t('label_file')}</span>
-                  <span class="meta-val">{selectedSong.folder}{selectedSong.folder.includes('\\') ? '\\' : '/'}{selectedSong.source}</span>
+                  <span class="meta-val">{displayPath(selectedSong.folder)}{selectedSong.folder.includes('\\') ? '\\' : '/'}{selectedSong.source}</span>
                 </div>
               {:else}
                 <div class="meta-row">
                   <span class="meta-label">{t('label_folder')}</span>
-                  <span class="meta-val">{selectedSong.folder}</span>
+                  <span class="meta-val">{displayPath(selectedSong.folder)}</span>
                 </div>
               {/if}
               <div class="meta-row">

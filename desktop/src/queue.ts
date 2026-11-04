@@ -136,6 +136,10 @@ function workerLogMessage(payload: WorkerEvent): string | undefined {
     case 'started':
       return `Processing started${payload.source ? `: ${payload.source}` : '.'}`
         + (payload.destination ? `\nOutput: ${payload.destination}` : '');
+    case 'checking_models':
+      return 'Checking models.';
+    case 'models_ready':
+      return 'Models ready.';
     case 'device':
       return payload.name ? `Using device: ${payload.name}` : undefined;
     case 'decoded': {
@@ -423,6 +427,11 @@ function findCommonDirectory(paths: string[]): string | null {
   const sep = paths[0].includes('\\') ? '\\' : '/';
   const prefix = first.isAbsolute ? (paths[0].startsWith('\\\\') ? '\\\\' : '/') : '';
   return prefix + commonParts.join(sep);
+}
+
+export function displayPath(path: string): string {
+  if (path.startsWith('\\\\?\\UNC\\')) return `\\\\${path.slice(8)}`;
+  return path.replace(/^\\\\\?\\/, '');
 }
 
 export function resolveExportTargets(folders: string[], exportRoot: string): Map<string, string> {
