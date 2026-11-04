@@ -30,6 +30,8 @@ export interface Song extends Preview {
   finishedAt: number;
   inferenceAt: number;
   destination?: string;
+  lastEventAt?: number;
+  stallNoticeFor?: number;
 }
 
 interface WorkerEventFields {
@@ -72,6 +74,7 @@ type WorkerEvent = WorkerEventFields & (
   | { event: 'model_finished'; target: string; pass_number: number }
   | { event: 'encoding'; index: number; total: number }
   | { event: 'started' | 'device' | 'decoded' | 'preparing_pass' | 'validated' | 'finalizing' | 'installing' | 'completed' | 'skipped' | 'recovered' | 'recovery_required' | 'cancelled' | 'error' | 'runtime_error' | 'models_error' | 'runtime_setup' | 'checking_models' | 'models_ready' }
+  | { event: 'stage'; message: string }
 );
 
 interface AudioValidation {
@@ -127,12 +130,27 @@ function validationLog(validation: AudioValidation): string {
   return summary.join(' · ');
 }
 
+export function stallNotice(song: Song, now: number): Song | undefined {
+  const STALL_MS = 60_000;
+  if (song.status !== 'running' || song.lastEventAt === undefined || song.stallNoticeFor === song.lastEventAt) {
+    return undefined;
+  }
+  const idle = now - song.lastEventAt;
+  if (idle < STALL_MS) {
+    return undefined;
+  }
+  const seconds = Math.round(idle / 1000);
+  return { ...song, stallNoticeFor: song.lastEventAt, log: appendLog(song.log, `No output from the worker for ${seconds} s. Last step: ${song.detail}`) };
+}
+
 function workerLogMessage(payload: WorkerEvent): string | undefined {
   const pass = payload.pass_number === undefined ? '' : ` · pass ${payload.pass_number}`;
   const chunk = payload.chunk_size === undefined
     ? ''
     : ` · chunk size ${payload.chunk_size.toLocaleString()} samples`;
   switch (payload.event) {
+    case 'stage':
+      return payload.message;
     case 'started':
       return `Processing started${payload.source ? `: ${payload.source}` : '.'}`
         + (payload.destination ? `\nOutput: ${payload.destination}` : '');

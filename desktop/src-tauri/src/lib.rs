@@ -534,7 +534,7 @@ impl Runner {
                     if ["completed", "skipped", "recovered", "cancelled", "error"].contains(&name) {
                         terminal = name.into();
                     }
-                    if let Some(detail) = worker.message {
+                    if let Some(detail) = worker.message.filter(|_| name != "stage") {
                         message = detail;
                     }
                     needs_recovery |= name == "recovery_required";

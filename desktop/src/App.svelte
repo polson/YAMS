@@ -8,7 +8,7 @@
   import { open } from '@tauri-apps/plugin-dialog';
   import { relaunch } from '@tauri-apps/plugin-process';
   import { check } from '@tauri-apps/plugin-updater';
-  import { displayPath, mergePreviews, queueProgress, refreshSong, resolveExportTargets, rowWindow, ROW_HEIGHT, timing, updateSong, scrollbarGeometry, scrollPositionFromThumb, type BatchEvent, type Preview, type Settings, type Song } from './queue';
+  import { displayPath, mergePreviews, queueProgress, refreshSong, resolveExportTargets, rowWindow, ROW_HEIGHT, stallNotice, timing, updateSong, scrollbarGeometry, scrollPositionFromThumb, type BatchEvent, type Preview, type Settings, type Song } from './queue';
   import { resolveInitialLocale, translate, type TranslationKey } from './i18n/index.ts';
   import logo from './assets/logo.png';
 
@@ -88,7 +88,13 @@
   );
 
   onMount(() => {
-    const timer = setInterval(() => { clock = performance.now(); }, 1000);
+    const timer = setInterval(() => {
+      clock = performance.now();
+      for (const song of songs) {
+        const notice = stallNotice(song, clock);
+        if (notice) { Object.assign(song, notice); }
+      }
+    }, 1000);
     let disposed = false;
     const cleanups: (() => void)[] = [];
     async function initialize() {
@@ -468,7 +474,7 @@
         started.add(event.id);
       }
       const index = positions.get(event.id)!;
-      Object.assign(songs[index], updateSong(songs[index], event, now, locale));
+      Object.assign(songs[index], updateSong(songs[index], event, now, locale), { lastEventAt: now });
     };
     try {
       await invoke('start_batch', {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { displayPath, mergePreviews, queueProgress, refreshSong, resolveExportTargets, rowWindow, ROW_HEIGHT, duration, timing, updateSong, scrollbarGeometry, scrollPositionFromThumb, type Song } from '../src/queue.ts';
+import { displayPath, mergePreviews, queueProgress, refreshSong, resolveExportTargets, rowWindow, ROW_HEIGHT, duration, stallNotice, timing, updateSong, scrollbarGeometry, scrollPositionFromThumb, type Song } from '../src/queue.ts';
 
 const song: Song = { id: 'a', folder: '/songs/a', status: 'ready', source: 'song.opus', backup: 'backup/song.opus', message: '', detail: '', progress: 0, log: '', canRetry: false, startedAt: 0, finishedAt: 0, inferenceAt: 0 };
 
@@ -309,4 +309,16 @@ test('display path strips Windows extended-length prefixes', () => {
   assert.equal(displayPath('\\\\?\\UNC\\server\\share\\song'), '\\\\server\\share\\song');
   assert.equal(displayPath('C:\\Users\\Public\\song'), 'C:\\Users\\Public\\song');
   assert.equal(displayPath('/songs/a'), '/songs/a');
+});
+
+test('stall notice is logged once per silent period', () => {
+  const running: Song = { ...song, status: 'running', detail: 'Loading audio engine…', log: '', lastEventAt: 1000 };
+  assert.equal(stallNotice(running, 30_000), undefined);
+  const noticed = stallNotice(running, 61_000);
+  assert.ok(noticed);
+  assert.match(noticed.log, /No output from the worker for 60 s\. Last step: Loading audio engine…/);
+  assert.equal(stallNotice(noticed, 120_000), undefined);
+  const resumed = { ...noticed, lastEventAt: 90_000 };
+  assert.equal(stallNotice(resumed, 100_000), undefined);
+  assert.ok(stallNotice(resumed, 151_000));
 });
