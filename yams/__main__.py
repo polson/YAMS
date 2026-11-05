@@ -11,7 +11,7 @@ from pathlib import Path
 
 import struct
 
-from .folders import abort_export, begin, begin_export, discover, install, install_export, interruption_message, locked, pending_stage, prepare, recover, OUTPUTS, OUTPUTS_6STEM
+from .folders import abort_export, begin, begin_export, discover, install, install_export, interruption_message, locked, pending_stage, prepare, recover, recorded_path, OUTPUTS, OUTPUTS_6STEM
 from .confile import is_con_file, is_excon_folder, find_excon_info, ConPackage, is_con_multitrack
 from .audio_file import is_audio_file, is_multitrack_folder, find_single_audio_in_folder, process_audio_file, abort_audio_process
 
@@ -129,7 +129,7 @@ def recover_transaction(folder, output_folder=None):
                 continue
             record = json.loads(journal.read_text(encoding="utf-8"))
             if not folder.is_dir() and record.get("format") in {"audio_file", "con_file"}:
-                if Path(record["source"]).resolve() != folder.resolve():
+                if recorded_path(record["source"]).resolve() != folder.resolve():
                     continue
             if record.get("format") == "folder_export":
                 if Path(record["source_folder"]).resolve() != folder.resolve():

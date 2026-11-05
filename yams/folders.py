@@ -56,6 +56,10 @@ def pending_stage(folder):
 VERBATIM_PREFIX = "\\\\?\\"
 
 
+def recorded_path(path):
+    return Path(str(path).removeprefix(VERBATIM_PREFIX))
+
+
 def interruption_message(stage):
     journal = stage / "job.json"
     if not journal.is_file():

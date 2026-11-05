@@ -273,6 +273,34 @@ class AudioFileTests(unittest.TestCase):
         self.assertEqual(source.read_bytes(), b"original song")
         self.assertFalse(stage.exists())
 
+    def test_recover_transaction_accepts_verbatim_prefixed_journal_paths(self):
+        prefix = "\\\\?\\"
+        destination = self.temp_dir / "song"
+        destination.mkdir()
+        source = destination / "song.opus"
+        stage = destination / ".yams-work"
+        payload = stage / "payload"
+        backup = payload / "backup" / source.name
+        backup.parent.mkdir(parents=True)
+        backup.write_bytes(b"original song")
+        write_record(stage, {
+            "version": 1,
+            "format": "audio_file",
+            "state": "processing",
+            "source": prefix + str(source.resolve()),
+            "source_sha256": digest(backup),
+            "source_backup": f"backup/{source.name}",
+            "remove_source": True,
+            "source_replaced": True,
+            "mode": "inplace",
+            "destination": prefix + str(destination.resolve()),
+            "files": {},
+        })
+
+        self.assertTrue(recover_transaction(destination))
+        self.assertEqual(source.read_bytes(), b"original song")
+        self.assertFalse(stage.exists())
+
     def test_process_audio_file_backs_up_same_named_source_before_publish(self):
         destination = self.temp_dir / "song"
         destination.mkdir()

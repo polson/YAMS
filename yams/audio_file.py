@@ -6,6 +6,7 @@ import shutil
 from .confile import is_con_file
 from .folders import (
     digest,
+    recorded_path,
     pending_stage,
     publish_staged_tree,
     remove_stage,
@@ -181,12 +182,12 @@ def abort_audio_process(destination, mode, audio_path):
             raise ValueError("Unsupported audio recovery record")
         if record["mode"] != mode:
             raise ValueError("Pending audio work has a different mode")
-        if Path(record["source"]) != Path(audio_path).resolve():
+        if recorded_path(record["source"]).resolve() != recorded_path(audio_path).resolve():
             raise ValueError("Invalid audio recovery source")
-        if Path(record["destination"]) != destination.resolve():
+        if recorded_path(record["destination"]).resolve() != recorded_path(destination).resolve():
             raise ValueError("Invalid audio recovery destination")
         if record["state"] != "committed":
-            source = Path(record["source"])
+            source = recorded_path(record["source"])
             source_output = False
             if record["remove_source"] and record["source_replaced"] and source.exists() and not source.is_symlink():
                 expected_output = record.get("files", {}).get(source.name)
@@ -229,7 +230,7 @@ def abort_audio_process(destination, mode, audio_path):
                     and not source.exists()
                     and not source.is_symlink()
                 ):
-                    if source.parent.resolve() != destination.resolve():
+                    if source.parent.resolve() != recorded_path(destination).resolve():
                         raise ValueError("Invalid audio recovery source")
                     backup_name = Path("backup") / source.name
                     if Path(record["source_backup"]) != backup_name:
