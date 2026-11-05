@@ -1,6 +1,7 @@
 import argparse
 import contextlib
 import json
+import logging
 import os
 import platform
 import sys
@@ -14,6 +15,26 @@ import struct
 from .folders import abort_export, begin, begin_export, discover, install, install_export, interruption_message, locked, pending_stage, prepare, recover, recorded_path, OUTPUTS, OUTPUTS_6STEM
 from .confile import is_con_file, is_excon_folder, find_excon_info, ConPackage, is_con_multitrack
 from .audio_file import is_audio_file, is_multitrack_folder, find_single_audio_in_folder, process_audio_file, abort_audio_process
+
+
+logger = logging.getLogger(__name__)
+
+
+def error_message(error):
+    text = str(error)
+    if isinstance(error, (ValueError, RuntimeError, OSError)) and text:
+        return text
+    return f"{type(error).__name__}: {text}" if text else type(error).__name__
+
+
+def rollback(action, failure):
+    """Runs cleanup for a failed song. If cleanup also fails, the event reports both errors."""
+    try:
+        action()
+    except Exception as rollback_error:
+        logger.error("Cleanup after the failure also failed: %s", error_message(rollback_error))
+        if isinstance(failure, Exception):
+            raise RuntimeError(f"{error_message(failure)}. Cleanup also failed: {error_message(rollback_error)}") from failure
 
 
 def has_work_marker(path):
@@ -53,7 +74,7 @@ def preview(folder):
                 return {**fields, "status": "ready", "source": folder.name,
                         "backup": f"backup/{folder.name}", "bytes": folder.stat().st_size}
         except Exception as error:
-            return {**fields, "status": "error", "message": str(error)}
+            return {**fields, "status": "error", "message": error_message(error)}
     if is_excon_folder(folder):
         if has_work_marker(folder):
             return {**fields, "status": "recovery_required", "message": interruption_message(pending_stage(folder))}
@@ -73,7 +94,7 @@ def preview(folder):
             return {**fields, "status": "ready", "source": mogg.name,
                     "backup": f"backup/{mogg.name}", "bytes": mogg.stat().st_size}
         except Exception as error:
-            return {**fields, "status": "error", "message": str(error)}
+            return {**fields, "status": "error", "message": error_message(error)}
     if is_audio_file(folder):
         sibling = folder.parent / folder.stem
         if has_work_marker(sibling):
@@ -248,7 +269,7 @@ def main():
                 try:
                     songs.append(preview(candidate))
                 except Exception as error:
-                    songs.append({"folder": str(candidate), "status": "error", "message": str(error),
+                    songs.append({"folder": str(candidate), "status": "error", "message": error_message(error),
                                   "source": "", "backup": ""})
             emit("previews", songs=songs)
             return 0
@@ -273,8 +294,8 @@ def main():
                         if is_con_multitrack(dta_text, mogg_bytes):
                             emit("skipped", reason="already_contains_multitrack_stems")
                             return 0
-            except Exception:
-                pass
+            except Exception as error:
+                logger.warning("Could not check %s for existing multitrack stems: %s", folder, error_message(error))
         if is_excon_folder(folder):
             try:
                 info = find_excon_info(folder)
@@ -282,8 +303,8 @@ def main():
                 if is_con_multitrack(dta_text, info["mogg_path"]):
                     emit("skipped", reason="already_contains_multitrack_stems")
                     return 0
-            except Exception:
-                pass
+            except Exception as error:
+                logger.warning("Could not check %s for existing multitrack stems: %s", folder, error_message(error))
         single_audio = find_single_audio_in_folder(folder)
         direct_audio = is_audio_file(folder)
         audio_source = folder if direct_audio else single_audio
@@ -300,7 +321,7 @@ def main():
                 ensure_runtime(installer=args.runtime_installer, resources=args.runtime_resources,
                                emit=emit_progress, cancelled=cancelled)
             except Exception as error:
-                emit("runtime_error", message=str(error), code=getattr(error, "code", None))
+                emit("runtime_error", message=error_message(error), code=getattr(error, "code", None))
                 raise
         from .models import default_models, ensure_models
         models = (args.models or default_models(profile=args.model_profile)).resolve()
@@ -309,7 +330,7 @@ def main():
             try:
                 ensure_models(folder=models, emit=emit_progress, profile=args.model_profile)
             except Exception as error:
-                emit("models_error", message=str(error))
+                emit("models_error", message=error_message(error))
                 raise
         expected_outputs = OUTPUTS_6STEM if args.model_profile in ("mlx-6stem", "torch-6stem") else OUTPUTS
         if is_con_file(folder):
@@ -345,8 +366,8 @@ def main():
                     backup_info = f"backup/{folder.name}" if mode == "inplace" else ""
                     emit("completed", destination=str(destination), backup=backup_info, validation=result.get("validation", {}))
                     return 0
-                except BaseException:
-                    abort_con_process(destination, folder, mode)
+                except BaseException as failure:
+                    rollback(lambda: abort_con_process(destination, folder, mode), failure)
                     raise
         if is_excon_folder(folder):
             from .confile import process_excon_song, abort_excon_process
@@ -386,8 +407,8 @@ def main():
                     backup_info = f"backup/{mogg.name}" if mode == "inplace" else ""
                     emit("completed", destination=str(destination), backup=backup_info, validation=result.get("validation", {}))
                     return 0
-                except BaseException:
-                    abort_excon_process(destination, mode)
+                except BaseException as failure:
+                    rollback(lambda: abort_excon_process(destination, mode), failure)
                     raise
         if audio_source is not None:
             mode = "export" if args.output_folder is not None else "inplace"
@@ -426,8 +447,8 @@ def main():
                     backup_info = f"backup/{audio_source.name}" if mode == "inplace" else ""
                     emit("completed", destination=str(destination), backup=backup_info, validation=result.get("validation", {}))
                     return 0
-                except BaseException:
-                    abort_audio_process(destination=destination, mode=mode, audio_path=audio_source)
+                except BaseException as failure:
+                    rollback(lambda: abort_audio_process(destination=destination, mode=mode, audio_path=audio_source), failure)
                     raise
         if args.output_folder is not None:
             destination = args.output_folder.resolve()
@@ -457,8 +478,8 @@ def main():
                     install_export(folder, destination, stage, record)
                     emit("completed", destination=str(destination), validation=result["validation"])
                     return 0
-                except BaseException:
-                    abort_export(destination)
+                except BaseException as failure:
+                    rollback(lambda: abort_export(destination), failure)
                     raise
         with locked(folder):
             if has_work_marker(folder):
@@ -493,16 +514,18 @@ def main():
                             emit("completed", backup=f"backup/{source.name}", validation=result["validation"])
                             return 0
                     except Exception as recovery_error:
-                        emit("recovery_required", message=str(recovery_error))
+                        logger.exception("Automatic recovery of %s failed", folder)
+                        emit("recovery_required", message=error_message(recovery_error))
                 raise
     except KeyboardInterrupt:
         emit("cancelled")
         return 130
     except Exception as error:
         traceback.print_exc(file=sys.stderr)
-        emit("error", message=str(error))
+        emit("error", message=error_message(error))
         return 1
 
 
 if __name__ == "__main__":
+    logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     sys.exit(main())

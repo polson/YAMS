@@ -1,12 +1,15 @@
 import contextlib
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
 import tempfile
 from pathlib import Path
 
+
+logger = logging.getLogger(__name__)
 
 FORMATS = {".ogg", ".opus", ".mp3", ".wav", ".aiff"}
 STEMS = {"song", "guitar", "bass", "rhythm", "keys", "vocals", "vocals_1", "vocals_2",
@@ -297,8 +300,8 @@ def locked(folder):
                 else:
                     import fcntl
                     fcntl.flock(file, fcntl.LOCK_UN)
-            except OSError:
-                pass
+            except OSError as error:
+                logger.warning("Could not release the lock on %s: %s", folder, error)
 
 
 def discover(folder):

@@ -1,22 +1,34 @@
 import gc
 import importlib
+import logging
 import math
 import os
 import shutil
-import subprocess
 import sys
 import time
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
+
+logger = logging.getLogger(__name__)
+
 try:
     import torch
-except ImportError:
+except ImportError as error:
     torch = None
+    _TORCH_IMPORT_ERROR = error
+    logger.warning("PyTorch failed to import: %s", error)
+else:
+    _TORCH_IMPORT_ERROR = None
 
-from .ffmpeg import resample_filter
+from .ffmpeg import resample_filter, run_ffmpeg
 from .folders import OUTPUTS, WAV_OUTPUTS, OUTPUTS_6STEM, WAV_OUTPUTS_6STEM, digest
+
+
+def _require_torch():
+    if torch is None:
+        raise ImportError(f"PyTorch is not available in this runtime: {_TORCH_IMPORT_ERROR}") from _TORCH_IMPORT_ERROR
 
 
 OPUS_RATE = 48000
@@ -31,29 +43,26 @@ STEM_MAPPING_6STEM = {
 
 
 def convert(source, destination, rate):
-    subprocess.run(
-        ["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", str(source),
-         "-map", "0:a:0", "-vn", "-af", resample_filter(rate),
-         "-c:a", "pcm_f32le", str(destination)], check=True,
-    )
+    run_ffmpeg(["-nostdin", "-v", "error", "-y", "-i", str(source),
+                "-map", "0:a:0", "-vn", "-af", resample_filter(rate),
+                "-c:a", "pcm_f32le", str(destination)], f"convert {Path(source).name}")
 
 
 def _decode_reference(stage):
     reference_path = stage / "reference.wav"
-    subprocess.run(
-        ["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", str(stage / "original"),
-         "-map", "0:a:0", "-vn", "-c:a", "pcm_f32le", str(reference_path)], check=True,
-    )
+    run_ffmpeg(["-nostdin", "-v", "error", "-y", "-i", str(stage / "original"),
+                "-map", "0:a:0", "-vn", "-c:a", "pcm_f32le", str(reference_path)], "decode the song audio")
     reference, rate = sf.read(file=reference_path, dtype="float32", always_2d=True)
     if len(reference) == 0 or reference.shape[1] not in (1, 2) or not np.isfinite(reference).all():
-        raise ValueError("Expected finite mono or stereo audio")
+        raise ValueError(f"Expected finite mono or stereo audio, found shape {reference.shape}")
     return reference_path, reference, rate
 
 
 def restore_timeline(audio, sample_rate, reference, rate, name):
     tail = len(audio) - len(reference)
     if sample_rate != rate or abs(tail) > math.ceil(rate / 44100):
-        raise ValueError(f"Unexpected resampling timeline: {name}")
+        raise ValueError(f"Unexpected resampling timeline: {name} (sample rate {sample_rate}, expected {rate}; "
+                         f"{tail} extra frames)")
     audio = audio[:len(reference)]
     if tail < 0:
         audio = np.pad(audio, ((0, -tail), (0, 0)))
@@ -90,9 +99,10 @@ def reconstruct(reference, outputs, rate, filenames=WAV_OUTPUTS):
         path = outputs / name
         audio, stem_rate = sf.read(file=path, dtype="float64", always_2d=True)
         if stem_rate != rate or audio.shape != reference.shape or not np.isfinite(audio).all():
-            raise ValueError(f"Invalid exported timeline or samples: {name}")
+            raise ValueError(f"Invalid exported timeline or samples: {name} (sample rate {stem_rate}, expected {rate}; "
+                             f"shape {audio.shape}, expected {reference.shape})")
         if sf.info(path).subtype != "FLOAT":
-            raise ValueError(f"Expected floating-point WAV: {name}")
+            raise ValueError(f"Expected floating-point WAV: {name} (subtype {sf.info(path).subtype})")
         combined += audio
         files[name] = _audio_file_report(audio, path)
     difference = combined - reference.astype(np.float64)
@@ -113,16 +123,16 @@ def export_opus(reference_path, pcm, outputs, emit, filenames=OUTPUTS):
     for index, name in enumerate(filenames):
         emit("encoding", asset=name, index=index + 1, total=total)
         path = outputs / name
-        subprocess.run(
-            ["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", str(pcm / name.replace(".opus", ".wav")),
-             "-map", "0:a:0", "-vn", "-af", resample_filter(OPUS_RATE),
-             "-c:a", "libopus", "-b:a", str(OPUS_BITRATE), "-vbr", "on",
-             "-application", "audio", "-compression_level", "10", "-f", "opus", str(path)], check=True,
-        )
+        run_ffmpeg(["-nostdin", "-v", "error", "-y", "-i", str(pcm / name.replace(".opus", ".wav")),
+                    "-map", "0:a:0", "-vn", "-af", resample_filter(OPUS_RATE),
+                    "-c:a", "libopus", "-b:a", str(OPUS_BITRATE), "-vbr", "on",
+                    "-application", "audio", "-compression_level", "10", "-f", "opus", str(path)],
+                   f"encode {name}")
         convert(source=path, destination=decoded, rate=OPUS_RATE)
         audio, stem_rate = sf.read(file=decoded, dtype="float64", always_2d=True)
         if stem_rate != rate or audio.shape != reference.shape or not np.isfinite(audio).all():
-            raise ValueError(f"Invalid Opus timeline or samples: {name}")
+            raise ValueError(f"Invalid Opus timeline or samples: {name} (sample rate {stem_rate}, expected {rate}; "
+                             f"shape {audio.shape}, expected {reference.shape})")
         combined += audio
         files[name] = _audio_file_report(audio, path)
     difference = combined - reference
@@ -173,7 +183,23 @@ def initial_chunk_size(device):
 DEFAULT_INFERENCE = Path(__file__).resolve().parent / "inference"
 
 
+def _build_model(settings, architecture, config_path):
+    try:
+        return settings.get_model_from_config(architecture, str(config_path))
+    except Exception as error:
+        raise RuntimeError(f"Could not read the model configuration {config_path.name}: {error}") from error
+
+
+def _load_weights(model, weights_path):
+    try:
+        weights = torch.load(weights_path, map_location="cpu", weights_only=True)
+        model.load_state_dict(weights, strict=True)
+    except Exception as error:
+        raise RuntimeError(f"Could not load the separation weights {weights_path.name}: {error}") from error
+
+
 def _load_inference_runtime(inference_source, device_name):
+    _require_torch()
     for path in (inference_source / "utils/model_utils.py", inference_source / "utils/settings.py"):
         if not path.is_file():
             raise ValueError(f"Missing upstream inference source: {path}")
@@ -191,9 +217,10 @@ def _load_inference_runtime(inference_source, device_name):
             device_name = "cpu"
     device = torch.device(device_name)
     if device.type == "cuda" and not torch.cuda.is_available():
-        raise ValueError("CUDA is unavailable in this runtime")
+        raise ValueError(f"CUDA is unavailable in this runtime (PyTorch {torch.__version__}, "
+                         f"CUDA build {torch.version.cuda or 'none'}). Choose CPU or check the NVIDIA driver.")
     if device.type == "mps" and not (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()):
-        raise ValueError("MPS is unavailable in this runtime")
+        raise ValueError(f"MPS is unavailable in this runtime (PyTorch {torch.__version__}). Choose CPU.")
     return model_utils, settings, device
 
 
@@ -218,7 +245,8 @@ def separate_torch_6stem(stage, models, inference_source=None, device_name="auto
     opus_bytes = math.ceil(len(reference) * OPUS_RATE / rate) * reference.shape[1] * 4
     required = 6 * stereo_bytes + 6 * model_bytes + reference.nbytes + 8 * opus_bytes + 64 * 1024**2
     if shutil.disk_usage(stage).free < required:
-        raise ValueError(f"Insufficient working space: need approximately {required} more bytes")
+        raise ValueError(f"Insufficient working space in {stage}: need approximately {required} more bytes, "
+                         f"{shutil.disk_usage(stage).free} available")
     emit("decoded", sample_rate=rate, frames=len(reference), channels=reference.shape[1])
 
     started = time.monotonic()
@@ -265,7 +293,7 @@ def run_torch_6stem_pcm(stage, models, reference, rate, settings, model_utils, d
     convert(work / "stereo.wav", work / "model-input.wav", rate=44100)
     model_input, _ = sf.read(file=work / "model-input.wav", dtype="float32", always_2d=True)
 
-    model, config = settings.get_model_from_config("bs_roformer", str(config_path))
+    model, config = _build_model(settings, "bs_roformer", config_path)
     if config.model.num_stems != 6:
         raise ValueError("Expected 6-stem BS-RoFormer configuration")
     if config.audio.sample_rate != 44100 or config.inference.normalize is not False:
@@ -274,9 +302,7 @@ def run_torch_6stem_pcm(stage, models, reference, rate, settings, model_utils, d
     if device.type == "cuda":
         budget_gpu(model=model, device=device)
     emit("stage", message="Loading separation weights…")
-    weights = torch.load(weights_path, map_location="cpu", weights_only=True)
-    model.load_state_dict(weights, strict=True)
-    del weights
+    _load_weights(model, weights_path)
     try:
         model = model.to(device).eval()
     except (torch.OutOfMemoryError, RuntimeError) as error:
@@ -392,14 +418,12 @@ def separate_drumsep_pcm(stage, models, reference, rate, settings, model_utils, 
     convert(drums_path, work / "drum-model-input.wav", rate=44100)
     drum_input, _ = sf.read(work / "drum-model-input.wav", dtype="float32", always_2d=True)
 
-    model, config = settings.get_model_from_config("mdx23c", str(yaml_path))
+    model, config = _build_model(settings, "mdx23c", yaml_path)
     config.training.use_amp = bool(config.training.use_amp and device.type == "cuda")
     if device.type == "cuda":
         budget_gpu(model=model, device=device)
     emit("stage", message="Loading drum refinement weights…")
-    weights = torch.load(ckpt_path, map_location="cpu", weights_only=True)
-    model.load_state_dict(weights, strict=True)
-    del weights
+    _load_weights(model, ckpt_path)
     try:
         model = model.to(device).eval()
     except (torch.OutOfMemoryError, RuntimeError) as error:
@@ -506,7 +530,8 @@ def separate_8stem(stage, models, inference_source=None, device_name="auto", emi
     opus_bytes = math.ceil(len(reference) * OPUS_RATE / rate) * reference.shape[1] * 4
     required = 8 * stereo_bytes + 8 * model_bytes + reference.nbytes + 8 * opus_bytes + 64 * 1024**2
     if shutil.disk_usage(stage).free < required:
-        raise ValueError(f"Insufficient working space: need approximately {required} more bytes")
+        raise ValueError(f"Insufficient working space in {stage}: need approximately {required} more bytes, "
+                         f"{shutil.disk_usage(stage).free} available")
     emit("decoded", sample_rate=rate, frames=len(reference), channels=reference.shape[1])
 
     started = time.monotonic()

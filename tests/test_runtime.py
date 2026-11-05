@@ -143,5 +143,31 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual((song / "song.wav").read_bytes(), b"original")
 
 
+    def test_unreadable_nvidia_smi_output_falls_back_to_cpu_with_a_warning(self):
+        result = subprocess.CompletedProcess(args=[], returncode=0, stdout="unexpected output\n")
+        with patch.object(sys, "platform", "linux"), patch("yams.runtime.platform.machine", return_value="x86_64"), \
+                patch("yams.runtime.subprocess.run", return_value=result):
+            with self.assertLogs("yams.runtime", level="WARNING") as logs:
+                self.assertEqual(torch_backend(), "cpu")
+        self.assertIn("unexpected output", logs.output[0])
+
+    def test_setup_failure_reports_the_exit_status_and_output(self):
+        code = "import sys; print('Resolved 42 packages'); sys.exit(3)"
+        with self.assertRaisesRegex(RuntimeError, "exited with status 3:\nResolved 42 packages"):
+            run_setup(arguments=[sys.executable, "-c", code], cache=Path(tempfile.gettempdir()), cancelled=threading.Event())
+
+    def test_verification_failure_names_the_step(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runtime = root / "runtime"
+            runtime.mkdir()
+            (root / "requirements.txt").write_text("dependency==1\n")
+            (root / "check_runtime.py").write_text("pass\n")
+            with patch.object(sys, "prefix", str(runtime)), patch("yams.runtime.torch_backend", return_value="cpu"), \
+                    patch("yams.runtime.run_setup", side_effect=[None, RuntimeError("import torch failed")]):
+                with self.assertRaisesRegex(RuntimeError, "Audio engine verification failed: import torch failed"):
+                    ensure_runtime(installer=root / "uv", resources=root, emit=lambda *args, **kwargs: None, cancelled=threading.Event())
+
+
 if __name__ == "__main__":
     unittest.main()

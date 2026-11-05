@@ -1,5 +1,6 @@
 import gc
 import json
+import logging
 import math
 import os
 from pathlib import Path
@@ -11,6 +12,8 @@ import numpy as np
 import onnxruntime as ort
 import soundfile as sf
 import torch
+
+logger = logging.getLogger(__name__)
 
 from .audio import (
     OPUS_RATE,
@@ -61,6 +64,7 @@ def _resolve_providers(device: str = "auto") -> list[str | tuple[str, dict]]:
                 try:
                     device_id = int(device_lower.split(":")[-1])
                 except ValueError:
+                    logger.warning("Ignoring invalid DirectML device %r; using device 0", device_lower)
                     device_id = 0
             providers.append(("DmlExecutionProvider", {"device_id": device_id}))
 
@@ -85,6 +89,7 @@ def create_onnx_session(model_path: Path, device: str = "auto") -> tuple[ort.Inf
         return session, active_provider
     except Exception as error:
         if _is_out_of_memory(error) and "CPUExecutionProvider" in providers:
+            logger.warning("ONNX model %s did not fit on %s; loading it on CPU: %s", model_path.name, providers[0], error)
             session = ort.InferenceSession(
                 str(model_path), sess_options=session_options, providers=["CPUExecutionProvider"]
             )

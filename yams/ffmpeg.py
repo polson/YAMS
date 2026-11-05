@@ -1,6 +1,7 @@
 import functools
 import gzip
 import hashlib
+import logging
 import os
 from pathlib import Path
 import platform
@@ -12,6 +13,8 @@ import tempfile
 import time
 import urllib.request
 
+
+logger = logging.getLogger(__name__)
 
 OPUS_SOXR_TEST_ARGS = [
     "-nostdin",
@@ -72,35 +75,45 @@ def _current_asset_key():
     return (os_name, arch)
 
 
-def test_ffmpeg_binary(binary_path):
+def _probe_ffmpeg(binary_path, arguments):
+    """Runs ffmpeg with test arguments. Returns (succeeded, reason) and keeps ffmpeg's error output for the reason."""
+    creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
     try:
-        creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         result = subprocess.run(
-            [str(binary_path)] + OPUS_TEST_ARGS,
-            check=True,
+            [str(binary_path)] + arguments,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             creationflags=creationflags
         )
-        return result.returncode == 0
-    except (OSError, subprocess.CalledProcessError):
-        return False
+    except OSError as error:
+        return False, str(error)
+    if result.returncode == 0:
+        return True, ""
+    stderr = result.stderr.decode("utf-8", errors="replace").strip()
+    return False, stderr[-2000:] or f"exit status {result.returncode}"
+
+
+def test_ffmpeg_binary(binary_path):
+    succeeded, reason = _probe_ffmpeg(binary_path, OPUS_TEST_ARGS)
+    if not succeeded:
+        logger.warning("FFmpeg at %s cannot encode Opus: %s", binary_path, reason)
+    return succeeded
+
+
+def run_ffmpeg(arguments, action):
+    """Runs ffmpeg and raises a RuntimeError that includes its error output when it fails."""
+    result = subprocess.run(["ffmpeg"] + arguments, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"FFmpeg could not {action} (exit status {result.returncode}): {stderr[-2000:] or 'no error output'}")
 
 
 @functools.lru_cache(maxsize=4)
 def supports_soxr(binary_path="ffmpeg"):
-    try:
-        creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        result = subprocess.run(
-            [str(binary_path)] + OPUS_SOXR_TEST_ARGS,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=creationflags
-        )
-        return result.returncode == 0
-    except (OSError, subprocess.CalledProcessError):
-        return False
+    succeeded, reason = _probe_ffmpeg(binary_path, OPUS_SOXR_TEST_ARGS)
+    if not succeeded:
+        logger.warning("FFmpeg at %s has no SoXR resampler; using the default resampler: %s", binary_path, reason)
+    return succeeded
 
 
 def resample_filter(rate, binary_path="ffmpeg"):
@@ -178,10 +191,16 @@ def ensure_ffmpeg(cache_dir, resources_dir=None, emit=None, cancelled=None):
                         reported = now
 
             if received != asset["bytes"] or checksum.hexdigest() != asset["sha256"]:
-                raise ValueError("FFmpeg download integrity check failed")
+                raise ValueError(
+                    f"FFmpeg download integrity check failed: received {received} of {asset['bytes']} bytes, "
+                    f"SHA-256 {checksum.hexdigest()} (expected {asset['sha256']})"
+                )
 
             output.flush()
             os.fsync(output.fileno())
+        except OSError as error:
+            temp_file.unlink(missing_ok=True)
+            raise OSError(f"Could not download FFmpeg from {asset['url']}: {error}") from error
         except Exception:
             temp_file.unlink(missing_ok=True)
             raise
@@ -197,8 +216,10 @@ def ensure_ffmpeg(cache_dir, resources_dir=None, emit=None, cancelled=None):
 
     prepend_path(cache_bin)
 
-    if not test_ffmpeg_binary(target_binary):
-        raise RuntimeError(f"Installed FFmpeg at {target_binary} failed verification")
+    succeeded, reason = _probe_ffmpeg(target_binary, OPUS_TEST_ARGS)
+    if not succeeded:
+        raise RuntimeError(f"Installed FFmpeg at {target_binary} failed verification: {reason}")
+    logger.info("Installed FFmpeg at %s", target_binary)
 
     if emit:
         emit("ffmpeg_ready", message="FFmpeg ready")

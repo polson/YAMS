@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from pathlib import Path
 import shutil
@@ -26,6 +27,9 @@ def is_audio_file(path):
     return path.is_file() and not path.is_symlink() and path.suffix.casefold() in AUDIO_FORMATS and not is_con_file(path)
 
 
+logger = logging.getLogger(__name__)
+
+
 def is_multitrack_folder(folder):
     if not isinstance(folder, Path):
         folder = Path(folder)
@@ -33,7 +37,8 @@ def is_multitrack_folder(folder):
         return False
     try:
         audio_files = [path for path in folder.iterdir() if is_audio_file(path)]
-    except OSError:
+    except OSError as error:
+        logger.warning("Could not list %s to look for multitrack stems: %s", folder, error)
         return False
     if len(audio_files) < 2:
         return False
@@ -49,7 +54,8 @@ def find_single_audio_in_folder(folder):
         return None
     try:
         entries = list(folder.iterdir())
-    except OSError:
+    except OSError as error:
+        logger.warning("Could not list %s to look for a single audio file: %s", folder, error)
         return None
     if any(e.name.casefold() == "song.ini" for e in entries):
         return None
@@ -244,5 +250,5 @@ def abort_audio_process(destination, mode, audio_path):
         try:
             if not any(destination.iterdir()):
                 destination.rmdir()
-        except OSError:
-            pass
+        except OSError as error:
+            logger.info("Left %s in place; it could not be removed: %s", destination, error)

@@ -1,4 +1,5 @@
-use crate::Settings;
+use crate::log_file::record;
+use crate::{tail, with_detail, Settings};
 use serde::{Deserialize, Serialize};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
@@ -89,7 +90,10 @@ fn has_windows_directml_gpu() -> bool {
             || stdout.contains("rtx")
             || stdout.contains("gtx")
     })
-    .unwrap_or(false)
+    .unwrap_or_else(|error| {
+        record(format!("DirectML GPU check skipped: could not run PowerShell: {error}"));
+        false
+    })
 }
 
 fn detect_available_devices() -> Vec<String> {
@@ -106,13 +110,10 @@ fn detect_available_devices() -> Vec<String> {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000);
         }
-        if cmd
-            .arg("--id=0")
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-        {
-            devices.push("cuda:0".into());
+        match cmd.arg("--id=0").output() {
+            Ok(output) if output.status.success() => devices.push("cuda:0".into()),
+            Ok(output) => record(format!("NVIDIA GPU not offered: nvidia-smi exited with {}", output.status)),
+            Err(error) => record(format!("NVIDIA GPU not offered: could not run nvidia-smi: {error}")),
         }
     }
     #[cfg(target_os = "linux")]
@@ -187,9 +188,14 @@ impl Engine {
         let has_worker = resources.join("yams/__main__.py").is_file()
             || resources.join("yass/__main__.py").is_file();
         if !has_worker || !has_inference {
-            return Err("Audio engine resources are missing. Rebuild or reinstall YAMS.".into());
+            return Err(format!(
+                "Audio engine resources are missing in {}. Rebuild or reinstall YAMS.",
+                resources.display()
+            ));
         }
-        std::fs::create_dir_all(&cache).map_err(|error| error.to_string())?;
+        std::fs::create_dir_all(&cache).map_err(|error| {
+            format!("Could not create the audio engine folder {}: {error}", cache.display())
+        })?;
         let environment = cache.join("runtime-v1");
         let python = environment.join(if cfg!(windows) {
             "Scripts/python.exe"
@@ -197,7 +203,7 @@ impl Engine {
             "bin/python"
         });
         emit("Checking audio engine…");
-        let mut ready = probe(&python, &resources, &cache, "--base");
+        let mut ready = checked_probe(&python, &resources, &cache, "--base");
         #[cfg(debug_assertions)]
         if ready.is_err() && std::env::var_os("YAMS_ENGINE_FRESH").or_else(|| std::env::var_os("YASS_ENGINE_FRESH")).is_none() {
             let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
@@ -207,7 +213,7 @@ impl Engine {
                 } else {
                     "miniconda3/envs/MusicSep-Lightning/bin/python"
                 });
-                ready = probe(&development, &resources, &cache, "--inference");
+                ready = checked_probe(&development, &resources, &cache, "--inference");
             }
         }
         if ready.is_err() {
@@ -217,6 +223,8 @@ impl Engine {
             } else {
                 "bin/uv"
             });
+            // The failure above is already in the log; the venv is recreated next.
+            record(format!("Recreating the audio engine at {}", environment.display()));
             run_installer(
                 &uv,
                 &cache,
@@ -230,7 +238,7 @@ impl Engine {
                 ],
             )?;
             emit("Verifying Python…");
-            ready = probe(&python, &resources, &cache, "--base");
+            ready = checked_probe(&python, &resources, &cache, "--base");
         }
         let python = ready.map_err(|error| format!("Audio engine setup failed: {error}"))?;
         emit("Checking FFmpeg…");
@@ -295,9 +303,25 @@ fn ensure_ffmpeg(
             format!("Could not start Python at {} to check FFmpeg: {error}", python.display())
         })?;
 
+    // Read stderr on its own thread so a child that writes a lot of it cannot block while stdout is read.
+    let stderr_reader = child.stderr.take().map(|mut stderr| {
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let _ = std::io::Read::read_to_end(&mut stderr, &mut bytes);
+            String::from_utf8_lossy(&bytes).into_owned()
+        })
+    });
+
     if let Some(stdout) = child.stdout.take() {
         let reader = std::io::BufReader::new(stdout);
-        for line in reader.lines().flatten() {
+        for line in reader.lines() {
+            let line = match line {
+                Ok(line) => line,
+                Err(error) => {
+                    record(format!("FFmpeg check output could not be read: {error}"));
+                    break;
+                }
+            };
             if let Some(msg) = line.strip_prefix("[ffmpeg_download] ") {
                 if !msg.is_empty() {
                     emit(msg);
@@ -313,12 +337,14 @@ fn ensure_ffmpeg(
     let status = child
         .wait()
         .map_err(|error| format!("FFmpeg check failed: {error}"))?;
+    let stderr = stderr_reader
+        .and_then(|reader| reader.join().ok())
+        .unwrap_or_default();
     if !status.success() {
-        let mut stderr_msg = String::new();
-        if let Some(mut stderr) = child.stderr.take() {
-            let _ = std::io::Read::read_to_string(&mut stderr, &mut stderr_msg);
-        }
-        return Err(format!("FFmpeg setup failed: {stderr_msg}"));
+        let detail = tail(&stderr, 2000);
+        let message = with_detail(format!("FFmpeg setup failed ({status})"), &detail);
+        record(format!("FFmpeg check failed for {}: {message}", python.display()));
+        return Err(message);
     }
     Ok(())
 }
@@ -358,19 +384,24 @@ fn probe(python: &Path, resources: &Path, cache: &Path, mode: &str) -> Result<St
         .output()
         .map_err(|error| format!("Could not start Python at {}: {error}", python.display()))?;
     if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr)
-            .chars()
-            .rev()
-            .take(2000)
-            .collect::<String>()
-            .chars()
-            .rev()
-            .collect());
+        let stderr = tail(&String::from_utf8_lossy(&output.stderr), 2000);
+        return Err(with_detail(
+            format!("Python at {} failed its check ({})", python.display(), output.status),
+            &stderr,
+        ));
     }
     let executable = String::from_utf8(output.stdout).map_err(|error| {
         format!("Python at {} returned an invalid UTF-8 executable path: {error}", python.display())
     })?;
     Ok(executable.trim().to_string())
+}
+
+/// Runs `probe` and records a failure, so the reason survives when a later step replaces the result.
+fn checked_probe(python: &Path, resources: &Path, cache: &Path, mode: &str) -> Result<String, String> {
+    probe(python, resources, cache, mode).map_err(|error| {
+        record(format!("Python check {mode} failed for {}: {error}", python.display()));
+        error
+    })
 }
 
 fn run_installer(uv: &Path, cache: &Path, arguments: &[&str]) -> Result<(), String> {
@@ -389,17 +420,14 @@ fn run_installer(uv: &Path, cache: &Path, arguments: &[&str]) -> Result<(), Stri
         .env("UV_PYTHON_INSTALL_DIR", cache.join("python"))
         .env("UV_PYTHON_INSTALL_BIN", "0")
         .output()
-        .map_err(|error| format!("Could not start audio engine installer: {error}"))?;
+        .map_err(|error| format!("Could not start the audio engine installer at {}: {error}", uv.display()))?;
     if !output.status.success() {
-        let message: String = String::from_utf8_lossy(&output.stderr)
-            .chars()
-            .rev()
-            .take(2000)
-            .collect::<String>()
-            .chars()
-            .rev()
-            .collect();
-        return Err(format!("Audio engine installation failed: {message}"));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let detail = tail(if stderr.trim().is_empty() { &stdout } else { &stderr }, 2000);
+        let message = with_detail(format!("Audio engine installation failed ({})", output.status), &detail);
+        record(format!("uv {} failed: {message}", arguments.join(" ")));
+        return Err(message);
     }
     Ok(())
 }

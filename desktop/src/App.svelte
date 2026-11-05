@@ -215,13 +215,14 @@
     if (initialized) { error = ''; }
     notice = t('notice_checking_engine');
     const events = new Channel<string>();
-    events.onmessage = message => { notice = message; };
+    let stage = '';
+    events.onmessage = message => { stage = message; notice = message; };
     try {
       await invoke('prepare_engine', { events });
       engineReady = true;
       notice = '';
     } catch (problem) {
-      error = String(problem);
+      error = stage ? `${String(problem)} (while: ${stage})` : String(problem);
       notice = '';
     } finally { preparing = false; }
   }

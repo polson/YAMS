@@ -1,8 +1,13 @@
 import io
+import logging
 import math
 import re
 import struct
 from pathlib import Path
+
+from .ffmpeg import run_ffmpeg
+
+logger = logging.getLogger(__name__)
 
 
 CON_TAGS = {b"CON ", b"LIVE", b"PIRS"}
@@ -338,7 +343,8 @@ def is_con_multitrack(dta_text, mogg_source=None):
                     if any(c < len(peaks) and peaks[c] > 0.01 for c in chs):
                         active_instruments += 1
                 return active_instruments >= 2
-        except Exception:
+        except Exception as error:
+            logger.warning("Could not analyze stem levels; judging multitrack from channel layout: %s", error)
             return len(distinct_channel_sets) >= 2
 
     return len(distinct_channel_sets) >= 2
@@ -400,14 +406,13 @@ def patch_dta_audio(text, profile="mega-8stem"):
 
 
 def create_unencrypted_mogg(stem_files, output_mogg_path):
-    import subprocess
     temp_ogg = output_mogg_path.with_suffix(".tmp.ogg")
     inputs = []
     for f in stem_files:
         inputs.extend(["-i", str(f)])
     filter_graph = "".join(f"[{i}:a]" for i in range(len(stem_files))) + f"amerge=inputs={len(stem_files)}[out]"
-    cmd = [
-        "ffmpeg", "-nostdin", "-v", "error", "-y",
+    arguments = [
+        "-nostdin", "-v", "error", "-y",
         *inputs,
         "-filter_complex", filter_graph,
         "-map", "[out]",
@@ -415,7 +420,7 @@ def create_unencrypted_mogg(stem_files, output_mogg_path):
         "-q:a", "8",
         str(temp_ogg),
     ]
-    subprocess.run(cmd, check=True)
+    run_ffmpeg(arguments, "mix the stem files")
     raw_ogg = temp_ogg.read_bytes()
     temp_ogg.unlink(missing_ok=True)
     header = struct.pack("<II", 10, 8)

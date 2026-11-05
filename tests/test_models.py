@@ -66,6 +66,11 @@ class ModelDownloadTests(unittest.TestCase):
                 models.download(folder=self.folder, name="BS-Rofo-SW-Fixed.ckpt", asset=self.asset, emit=self.emit)
         self.assertEqual(list(self.folder.iterdir()), [])
 
+    def test_network_failure_names_the_model_and_host(self):
+        with patch("yams.models.urllib.request.urlopen", side_effect=OSError("offline")):
+            with self.assertRaisesRegex(OSError, "Could not download BS-Rofo-SW-Fixed.ckpt from example.test: offline"):
+                models.download(folder=self.folder, name="BS-Rofo-SW-Fixed.ckpt", asset=self.asset, emit=self.emit)
+
     def test_download_failure_does_not_start_song_transaction(self):
         (self.folder / "song.ini").write_text("[song]\n")
         (self.folder / "notes.mid").write_bytes(b"chart")

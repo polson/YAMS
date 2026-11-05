@@ -386,5 +386,32 @@ class CommandTests(unittest.TestCase):
             self.assertIn("keys (8 9)", dta_text)
 
 
+class ErrorReportingTests(unittest.TestCase):
+    def test_cleanup_failure_is_reported_with_the_original_error(self):
+        from yams.__main__ import rollback
+
+        def failing_cleanup():
+            raise ValueError("Backup changed")
+
+        with self.assertRaisesRegex(RuntimeError, "Audio decode failed. Cleanup also failed: Backup changed"):
+            rollback(failing_cleanup, ValueError("Audio decode failed"))
+
+    def test_cancellation_is_not_replaced_by_a_cleanup_failure(self):
+        from yams.__main__ import rollback
+
+        def failing_cleanup():
+            raise ValueError("Backup changed")
+
+        with self.assertLogs("yams.__main__", level="ERROR"):
+            rollback(failing_cleanup, KeyboardInterrupt())
+
+    def test_error_message_names_exceptions_without_text(self):
+        from yams.__main__ import error_message
+
+        self.assertEqual(error_message(KeyError("LOCALAPPDATA")), "KeyError: 'LOCALAPPDATA'")
+        self.assertEqual(error_message(MemoryError()), "MemoryError")
+        self.assertEqual(error_message(ValueError("bad input")), "bad input")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2,12 +2,44 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Write};
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::{ChildStdin, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
 pub mod engine;
+pub mod log_file;
+
+use log_file::record;
+
+/// Returns the last `limit` characters of `text`, trimmed of surrounding whitespace.
+pub fn tail(text: &str, limit: usize) -> String {
+    let trimmed = text.trim();
+    let count = trimmed.chars().count();
+    if count <= limit {
+        trimmed.to_string()
+    } else {
+        trimmed.chars().skip(count - limit).collect()
+    }
+}
+
+/// Adds captured error output to a failure message, or says that nothing was printed.
+fn with_detail(message: String, stderr: &str) -> String {
+    let stderr = stderr.trim();
+    if stderr.is_empty() {
+        format!("{message}. No error output was printed.")
+    } else {
+        format!("{message}\n{stderr}")
+    }
+}
+
+fn with_log_pointer(message: String) -> String {
+    match log_file::path() {
+        Some(path) => format!("{message}\nDetails were saved to {}", path.display()),
+        None => message,
+    }
+}
 
 #[derive(Clone)]
 pub struct Settings {
@@ -24,15 +56,18 @@ pub struct Settings {
 impl Settings {
     pub fn command(&self) -> Result<Command, String> {
         if !Path::new(&self.python).is_file() {
-            return Err("Choose an existing Python executable".into());
+            return Err(format!("Choose an existing Python executable. Not found: {}", self.python));
         }
         let has_main = Path::new(&self.project).join("yams/__main__.py").is_file()
             || Path::new(&self.project).join("yass/__main__.py").is_file();
         if !has_main {
-            return Err("Choose the YAMS project folder containing yams/__main__.py".into());
+            return Err(format!(
+                "Choose the YAMS project folder containing yams/__main__.py. Not found in: {}",
+                self.project
+            ));
         }
         if !["auto", "cpu", "cuda:0", "mps", "dml:0"].contains(&self.device.as_str()) {
-            return Err("Unsupported device".into());
+            return Err(format!("Unsupported device: {}", self.device));
         }
         let mut python_path = self.project.clone();
         #[cfg(debug_assertions)]
@@ -249,9 +284,8 @@ pub fn inspect(settings: &Settings, paths: Vec<String>) -> Result<Vec<Preview>, 
             continue;
         }
         let entries = std::fs::read_dir(&canonical)
-            .map_err(|error| error.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())?;
+            .and_then(|directory| directory.collect::<Result<Vec<_>, _>>())
+            .map_err(|error| format!("Could not read {}: {error}", canonical.display()))?;
         let is_song = entries.iter().any(|entry| {
             entry
                 .file_name()
@@ -287,7 +321,9 @@ pub fn inspect(settings: &Settings, paths: Vec<String>) -> Result<Vec<Preview>, 
                     }
                 }
                 for entry in entries {
-                    let kind = entry.file_type().map_err(|error| error.to_string())?;
+                    let kind = entry
+                        .file_type()
+                        .map_err(|error| format!("Could not read {}: {error}", entry.path().display()))?;
                     let name = entry.file_name();
                     if kind.is_dir() && !name.to_string_lossy().starts_with('.') && name != "backup" {
                         pending.push(entry.path());
@@ -311,43 +347,76 @@ pub fn inspect(settings: &Settings, paths: Vec<String>) -> Result<Vec<Preview>, 
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| format!("Could not run Python: {error}"))?;
+        .map_err(|error| format!("Could not start Python at {}: {error}", settings.python))?;
     let mut input = child.stdin.take().unwrap();
     let sent = serde_json::to_writer(&mut input, &folders);
     drop(input);
     let output = child
         .wait_with_output()
-        .map_err(|error| error.to_string())?;
-    sent.map_err(|error| error.to_string())?;
-    let event: Value = serde_json::from_slice(&output.stdout).map_err(|_| {
-        format!(
-            "Worker did not return previews: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )
-    })?;
+        .map_err(|error| format!("Could not read the worker's preview output: {error}"))?;
+    let stderr = tail(&String::from_utf8_lossy(&output.stderr), 2000);
+    sent.map_err(|error| format!("Could not send songs to the worker: {error}"))?;
+    let event: Value = match serde_json::from_slice(&output.stdout) {
+        Ok(event) => event,
+        Err(_) => {
+            let message = format!("Worker did not return previews ({})", output.status);
+            record(format!("{message}: {stderr}"));
+            return Err(with_detail(message, &stderr));
+        }
+    };
     if !output.status.success() || event["event"] != "previews" {
-        return Err(event["message"]
+        let message = event["message"]
             .as_str()
             .unwrap_or("Unexpected worker preview response")
-            .into());
+            .to_string();
+        record(format!("{message} ({}): {stderr}", output.status));
+        return Err(with_detail(message, &stderr));
     }
     let mut previews: Vec<Preview> =
-        serde_json::from_value(event["songs"].clone()).map_err(|error| error.to_string())?;
+        serde_json::from_value(event["songs"].clone()).map_err(|error| format!("Worker previews were malformed: {error}"))?;
     let expected: HashSet<_> = folders.into_iter().collect();
     let received: HashSet<_> = previews
         .iter()
         .map(|preview| preview.folder.clone())
         .collect();
-    if received != expected
-        || previews.len() != received.len()
-        || previews.iter().any(|preview| {
-            !["ready", "skipped", "error", "recovery_required"].contains(&preview.status.as_str())
-        })
-    {
-        return Err("Worker returned mismatched folder previews".into());
+    if received != expected || previews.len() != received.len() {
+        let missing = expected.difference(&received).count();
+        let unexpected = received.difference(&expected).count();
+        let duplicated = previews.len().saturating_sub(received.len());
+        return Err(format!(
+            "Worker returned previews for different songs: {missing} missing, {unexpected} unexpected, {duplicated} duplicated"
+        ));
+    }
+    if let Some(preview) = previews.iter().find(|preview| {
+        !["ready", "skipped", "error", "recovery_required"].contains(&preview.status.as_str())
+    }) {
+        return Err(format!(
+            "Worker returned unknown preview status {:?} for {}",
+            preview.status, preview.folder
+        ));
     }
     previews.sort_by(|left, right| left.folder.cmp(&right.folder));
     Ok(previews)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tail_keeps_the_end_of_long_text() {
+        assert_eq!(tail("  abcdef \n", 3), "def");
+        assert_eq!(tail("ab", 3), "ab");
+    }
+
+    #[test]
+    fn failure_details_say_when_nothing_was_printed() {
+        assert_eq!(
+            with_detail("failed".into(), "  "),
+            "failed. No error output was printed."
+        );
+        assert_eq!(with_detail("failed".into(), "boom\n"), "failed\nboom");
+    }
 }
 
 #[derive(Default)]
@@ -363,8 +432,13 @@ pub struct Runner {
 }
 
 impl Runner {
+    /// Locks the batch state. A panic in another thread must not stop later batches or cancellation.
+    fn state(&self) -> MutexGuard<'_, State> {
+        self.state.lock().unwrap_or_else(|poison| poison.into_inner())
+    }
+
     pub fn running(&self) -> bool {
-        self.state.lock().unwrap().running
+        self.state().running
     }
 
     pub fn reserve(&self, settings: &Settings, jobs: &[Job]) -> Result<(), String> {
@@ -377,12 +451,18 @@ impl Runner {
         for job in jobs {
             let path = Path::new(&job.folder)
                 .canonicalize()
-                .map_err(|error| error.to_string())?;
-            if (!path.is_dir() && !is_con_file(&path) && !is_audio_file(&path)) || !folders.insert(path) || !ids.insert(&job.id) {
-                return Err("Each queued job must have a unique ID and folder".into());
+                .map_err(|error| format!("Could not open {}: {error}", job.folder))?;
+            if !path.is_dir() && !is_con_file(&path) && !is_audio_file(&path) {
+                return Err(format!("Not a song folder, audio file, or CON package: {}", job.folder));
+            }
+            if !folders.insert(path) {
+                return Err(format!("The same song is queued twice: {}", job.folder));
+            }
+            if !ids.insert(&job.id) {
+                return Err(format!("Two queued songs share the ID {}", job.id));
             }
         }
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state();
         if state.running {
             return Err("A batch is already running".into());
         }
@@ -392,40 +472,58 @@ impl Runner {
     }
 
     pub fn cancel(&self) -> Result<(), String> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state();
         state.stop = true;
         if let Some(input) = state.input.as_mut() {
-            input
-                .write_all(b"cancel\n")
-                .map_err(|error| error.to_string())?;
-            input.flush().map_err(|error| error.to_string())?;
+            let sent = input.write_all(b"cancel\n").and_then(|()| input.flush());
+            if let Err(error) = sent {
+                let message = format!("Could not send cancel to the worker: {error}");
+                record(&message);
+                return Err(message);
+            }
         }
         Ok(())
     }
 
     pub fn run(&self, settings: Settings, jobs: Vec<Job>, emit: Arc<dyn Fn(Value) + Send + Sync>) {
+        record(format!("Batch started: {} song(s), device {}, model profile {}", jobs.len(), settings.device, settings.model_profile));
+        let outcome = panic::catch_unwind(AssertUnwindSafe(|| self.run_jobs(&settings, jobs, &emit)));
+        {
+            let mut state = self.state();
+            state.running = false;
+            state.input = None;
+        }
+        if outcome.is_err() {
+            record("Batch stopped unexpectedly; remaining songs were not started");
+        }
+        record("Batch finished");
+        emit(json!({"kind": "batch_finished"}));
+    }
+
+    fn run_jobs(&self, settings: &Settings, jobs: Vec<Job>, emit: &Arc<dyn Fn(Value) + Send + Sync>) {
         for job in jobs {
-            if self.state.lock().unwrap().stop {
+            if self.state().stop {
+                record(format!("Job {} cancelled before it started", job.id));
                 emit(
                     json!({"id": job.id, "kind": "finished", "status": "cancelled", "message": "Queue stopped before this song started"}),
                 );
                 continue;
             }
+            record(format!("Job {} started: {}", job.id, job.folder));
             emit(json!({"id": job.id, "kind": "started"}));
-            match self.run_job(&settings, &job, emit.clone()) {
-                Ok((status, message)) => emit(
-                    json!({"id": job.id, "kind": "finished", "status": status, "message": message}),
+            // A panic while separating one song must not stop the rest of the batch.
+            let outcome = panic::catch_unwind(AssertUnwindSafe(|| self.run_job(settings, &job, emit.clone())));
+            let (status, message) = match outcome {
+                Ok(Ok(result)) => result,
+                Ok(Err(message)) => ("error".into(), with_log_pointer(message)),
+                Err(_) => (
+                    "error".into(),
+                    with_log_pointer("YAMS stopped unexpectedly while separating this song.".into()),
                 ),
-                Err(message) => emit(
-                    json!({"id": job.id, "kind": "finished", "status": "error", "message": message}),
-                ),
-            }
+            };
+            record(format!("Job {} finished with status {status}: {message}", job.id));
+            emit(json!({"id": job.id, "kind": "finished", "status": status, "message": message}));
         }
-        let mut state = self.state.lock().unwrap();
-        state.running = false;
-        state.input = None;
-        drop(state);
-        emit(json!({"kind": "batch_finished"}));
     }
 
     fn run_job(
@@ -436,7 +534,7 @@ impl Runner {
     ) -> Result<(String, String), String> {
         let expected_folder = Path::new(&job.folder)
             .canonicalize()
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| format!("Could not open {}: {error}", job.folder))?;
         let mut command = settings.command()?;
         command.arg(&expected_folder);
         if job.recover {
@@ -471,8 +569,8 @@ impl Runner {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|error| format!("Could not start worker: {error}"))?;
-        let mut state = self.state.lock().unwrap();
+            .map_err(|error| format!("Could not start the worker with {}: {error}", settings.python))?;
+        let mut state = self.state();
         state.input = child.stdin.take();
         let stop = state.stop;
         drop(state);
@@ -488,6 +586,7 @@ impl Runner {
                 match line {
                     Ok(line) => {
                         let line: String = line.chars().take(2048).collect();
+                        record(format!("worker {id}: {line}"));
                         recent.push_str(&line);
                         recent.push('\n');
                         if recent.len() > 8192 {
@@ -503,6 +602,7 @@ impl Runner {
                         diagnostic_emit(json!({"id": id, "kind": "diagnostic", "message": line}));
                     }
                     Err(error) => {
+                        record(format!("worker {id}: could not read stderr: {error}"));
                         recent.push_str(&error.to_string());
                         break;
                     }
@@ -515,21 +615,24 @@ impl Runner {
         let mut protocol_error = None;
         let mut needs_recovery = false;
         for line in BufReader::new(child.stdout.take().unwrap()).lines() {
-            let parsed = line
-                .map_err(|error| error.to_string())
-                .and_then(|line| {
-                    serde_json::from_str::<Value>(&line).map_err(|error| error.to_string())
-                })
-                .and_then(|event| {
-                    serde_json::from_value::<WorkerEvent>(event.clone())
-                        .map(|worker| (event, worker))
-                        .map_err(|error| error.to_string())
-                });
+            let text = match line {
+                Ok(text) => text,
+                Err(error) => {
+                    protocol_error.get_or_insert_with(|| format!("Could not read worker output: {error}"));
+                    let _ = self.cancel();
+                    continue;
+                }
+            };
+            let parsed = serde_json::from_str::<Value>(&text).ok().and_then(|event| {
+                serde_json::from_value::<WorkerEvent>(event.clone())
+                    .ok()
+                    .map(|worker| (event, worker))
+            });
             match parsed {
-                Ok((event, worker)) if worker.matches_job(&expected_folder) => {
+                Some((event, worker)) if worker.matches_job(&expected_folder) => {
                     let name = worker.event.as_str();
                     if name == "models_error" || name == "runtime_error" {
-                        self.state.lock().unwrap().stop = true;
+                        self.state().stop = true;
                     }
                     if ["completed", "skipped", "recovered", "cancelled", "error"].contains(&name) {
                         terminal = name.into();
@@ -541,33 +644,44 @@ impl Runner {
                     emit(json!({"id": job.id, "kind": "worker", "payload": event}));
                 }
                 _ => {
-                    protocol_error = Some(
-                        "Worker returned invalid progress; cancellation requested".to_string(),
-                    );
+                    let excerpt: String = text.chars().take(300).collect();
+                    protocol_error.get_or_insert_with(|| {
+                        format!("Worker sent an unexpected line on stdout; cancellation requested: {excerpt}")
+                    });
                     let _ = self.cancel();
                 }
             }
         }
-        let exit = child.wait().map_err(|error| error.to_string());
-        self.state.lock().unwrap().input = None;
-        let recent = diagnostics.join().map_err(|_| "Diagnostic reader failed")?;
+        let exit = child.wait().map_err(|error| format!("Could not wait for the worker: {error}"));
+        self.state().input = None;
+        let recent = diagnostics.join().unwrap_or_else(|_| {
+            record(format!("Job {} lost its worker error output", job.id));
+            String::new()
+        });
         let exit = exit?;
-        if needs_recovery {
-            return Ok(("recovery_required".into(), message));
-        }
-        if let Some(error) = protocol_error {
-            return Ok(("error".into(), format!("{error}\n{recent}")));
-        }
-        let status = match (exit.code(), terminal.as_str()) {
-            (Some(0), "completed") => "completed",
-            (Some(0), "skipped") => "skipped",
-            (Some(0), "recovered") => "recovered",
-            (Some(130), "cancelled") => "cancelled",
-            _ => "error",
+        let (status, message) = if needs_recovery {
+            ("recovery_required".to_string(), message)
+        } else if let Some(error) = protocol_error {
+            ("error".to_string(), with_detail(error, &recent))
+        } else {
+            let status = match (exit.code(), terminal.as_str()) {
+                (Some(0), "completed") => "completed",
+                (Some(0), "skipped") => "skipped",
+                (Some(0), "recovered") => "recovered",
+                (Some(130), "cancelled") => "cancelled",
+                _ => "error",
+            };
+            let message = if status == "error" && message.is_empty() {
+                with_detail(format!("Worker exited with {exit}"), &recent)
+            } else {
+                message
+            };
+            (status.to_string(), message)
         };
-        if status == "error" && message.is_empty() {
-            message = format!("Worker exited with {exit}: {recent}");
+        if status == "error" {
+            record(format!("Job {} worker output:\n{}", job.id, tail(&recent, 4000)));
+            return Ok((status, with_log_pointer(message)));
         }
-        Ok((status.into(), message))
+        Ok((status, message))
     }
 }

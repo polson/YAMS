@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tauri::{ipc::Channel, Emitter, Manager, State};
 use yams_desktop::engine::{Engine, Preferences};
+use yams_desktop::log_file::{self, record};
 use yams_desktop::{inspect, Job, Preview, Runner, Settings};
 
 type EngineState = Arc<Mutex<Option<Engine>>>;
@@ -35,21 +36,27 @@ async fn prepare_engine(
         .map(std::path::PathBuf::from)
         .unwrap_or(cache);
     let engine = engine.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let mut engine = engine.lock().unwrap();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let mut engine = engine.lock().unwrap_or_else(|poison| poison.into_inner());
         if engine.is_none() {
             *engine = Some(Engine::prepare(resources, cache, |message| {
+                record(format!("Audio engine setup: {message}"));
                 let _ = events.send(message.to_string());
             })?);
         }
         Ok(())
     })
     .await
-    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())?;
+    match &result {
+        Ok(()) => record("Audio engine is ready"),
+        Err(error) => record(format!("Audio engine setup failed: {error}")),
+    }
+    result
 }
 
 fn worker_settings(engine: &EngineState, preferences: Preferences) -> Result<Settings, String> {
-    let engine = engine.lock().unwrap();
+    let engine = engine.lock().unwrap_or_else(|poison| poison.into_inner());
     engine
         .as_ref()
         .map(|engine| engine.settings(preferences))
@@ -112,7 +119,10 @@ try {
         throw 'The downloaded installer is not signed by Microsoft Corporation.'
     }
     $process = Start-Process -FilePath $file -ArgumentList '/install', '/quiet', '/norestart' -Verb RunAs -Wait -PassThru
-    exit $process.ExitCode
+    if ($process.ExitCode -notin 0, 1638, 3010) { exit $process.ExitCode }
+    $installed = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64' -ErrorAction SilentlyContinue).Installed
+    if ($installed -ne 1) { throw 'The Visual C++ installer finished, but Windows does not report the runtime as installed.' }
+    exit 0
 } finally {
     Remove-Item -LiteralPath $file -ErrorAction SilentlyContinue
 }
@@ -128,17 +138,24 @@ async fn install_vc_runtime() -> Result<(), String> {
                 .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", INSTALL_VC_RUNTIME])
                 .creation_flags(0x08000000)
                 .output()
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| format!("Could not start PowerShell to install the Visual C++ runtime: {error}"))?;
             // 3010: installed, restart advised. 1638: a newer version is already installed.
             match output.status.code() {
-                Some(0) | Some(3010) | Some(1638) => Ok(()),
+                Some(0) | Some(3010) | Some(1638) => {
+                    record("Visual C++ runtime is installed");
+                    Ok(())
+                }
                 code => {
-                    let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                    Err(if detail.is_empty() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let detail = yams_desktop::tail(if stderr.trim().is_empty() { &stdout } else { &stderr }, 2000);
+                    let message = if detail.is_empty() {
                         format!("The Visual C++ installer exited with {code:?}")
                     } else {
-                        detail
-                    })
+                        format!("The Visual C++ installer exited with {code:?}: {detail}")
+                    };
+                    record(&message);
+                    Err(message)
                 }
             }
         }
@@ -232,12 +249,26 @@ fn main() {
     if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
+    // Release Windows builds have no console, so panics are written to the log file instead.
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        record(format!("Unexpected panic: {info}"));
+        previous_hook(info);
+    }));
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Runner::default())
         .manage(EngineState::default())
+        .setup(|app| {
+            let directory = app.path().app_log_dir()?;
+            match log_file::start(&directory) {
+                Ok(path) => record(format!("YAMS {} started. Log: {}", env!("CARGO_PKG_VERSION"), path.display())),
+                Err(error) => eprintln!("{error}"),
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             default_settings,
             prepare_engine,

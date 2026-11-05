@@ -92,11 +92,30 @@ class FfmpegTests(unittest.TestCase):
             self.assertTrue(ffmpeg.test_ffmpeg_binary("fake_ffmpeg"))
             mock_run.assert_called_once_with(
                 ["fake_ffmpeg"] + ffmpeg.OPUS_TEST_ARGS,
-                check=True,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             )
+
+
+    def test_rejected_candidate_reports_ffmpeg_error_output(self):
+        rejected = subprocess.CompletedProcess(args=[], returncode=1, stdout=b"", stderr=b"Unknown encoder 'libopus'\n")
+        with patch("subprocess.run", return_value=rejected), self.assertLogs("yams.ffmpeg", level="WARNING") as logs:
+            self.assertFalse(ffmpeg.test_ffmpeg_binary("fake_ffmpeg"))
+        self.assertIn("Unknown encoder 'libopus'", logs.output[0])
+
+    def test_run_ffmpeg_failure_includes_error_output(self):
+        failed = subprocess.CompletedProcess(args=[], returncode=1, stdout=b"", stderr=b"Invalid data found\n")
+        with patch("subprocess.run", return_value=failed):
+            with self.assertRaisesRegex(RuntimeError, "could not convert song.ogg \\(exit status 1\\): Invalid data found"):
+                ffmpeg.run_ffmpeg(["-i", "song.ogg"], "convert song.ogg")
+
+    def test_download_network_failure_names_the_url(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("yams.ffmpeg.find_ffmpeg", return_value=None), \
+                 patch("urllib.request.urlopen", side_effect=OSError("offline")):
+                with self.assertRaisesRegex(OSError, "Could not download FFmpeg from https://github.com/.*: offline"):
+                    ffmpeg.ensure_ffmpeg(cache_dir=Path(temp_dir) / "cache")
 
 
 if __name__ == "__main__":

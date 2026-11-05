@@ -292,5 +292,14 @@ class Torch8StemTests(unittest.TestCase):
         self.assertEqual(drum_start_events[0]["total_passes"], 2)
 
 
+class TorchImportTests(unittest.TestCase):
+    def test_missing_torch_reports_the_import_error(self):
+        import yams.audio as audio
+        error = ImportError("No module named 'torch'")
+        with patch.object(audio, "torch", None), patch.object(audio, "_TORCH_IMPORT_ERROR", error):
+            with self.assertRaisesRegex(ImportError, "PyTorch is not available in this runtime: No module named 'torch'"):
+                audio._load_inference_runtime(Path("."), "cpu")
+
+
 if __name__ == "__main__":
     unittest.main()

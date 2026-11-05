@@ -1,16 +1,20 @@
 import hashlib
 import json
+import logging
 import os
 import platform
 import shutil
 import sys
 import tempfile
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
 from .folders import digest, sync_directory
 
+
+logger = logging.getLogger(__name__)
 
 ASSETS = json.loads(Path(__file__).with_name("model_assets.json").read_text())
 
@@ -38,7 +42,10 @@ def _model_selection(profile):
 
 def default_models(profile="mega-8stem"):
     if os.name == "nt":
-        cache = Path(os.environ["LOCALAPPDATA"])
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if not local_app_data:
+            raise ValueError("LOCALAPPDATA is not set, so the model cache folder cannot be found")
+        cache = Path(local_app_data)
     else:
         cache = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache")))
     suffix, _ = _model_selection(profile)
@@ -70,13 +77,17 @@ def download(folder, name, asset, emit):
                         emit("model_download", asset=name, received=received, total=asset["bytes"])
                         reported = now
             if received != asset["bytes"] or checksum.hexdigest() != asset["sha256"]:
-                raise ValueError(f"Model download verification failed: {name}")
+                raise ValueError(f"Model download verification failed: {name} (received {received} of {asset['bytes']} bytes; "
+                                 f"SHA-256 {checksum.hexdigest()}, expected {asset['sha256']})")
             output.flush()
             os.fsync(output.fileno())
             output.close()
             emit("model_download", asset=name, received=received, total=asset["bytes"])
             os.replace(temporary, folder / name)
             sync_directory(folder)
+        except OSError as error:
+            host = urllib.parse.urlsplit(asset["url"]).netloc
+            raise OSError(f"Could not download {name} from {host}: {error}") from error
         finally:
             output.close()
             temporary.unlink(missing_ok=True)
@@ -91,6 +102,7 @@ def ensure_models(folder, emit, profile="mega-8stem"):
         path = folder / name
         if path.is_file() and not path.is_symlink() and path.stat().st_size == asset["bytes"] and digest(path) == asset["sha256"]:
             continue
+        logger.info("Model file %s is missing or does not match its checksum; downloading it", name)
         missing.append((name, asset))
     required = sum(asset["bytes"] for _, asset in missing)
     if missing and shutil.disk_usage(folder).free < required + 64 * 1024**2:
