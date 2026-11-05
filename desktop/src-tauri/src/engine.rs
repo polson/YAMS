@@ -288,6 +288,7 @@ fn ensure_ffmpeg(
     command
         .env_remove("PYTHONHOME")
         .env("PYTHONPATH", resources)
+        .env("PYTHONIOENCODING", "utf-8")
         .arg("-m")
         .arg("yams.ffmpeg")
         .arg("--cache")
@@ -315,15 +316,22 @@ fn ensure_ffmpeg(
     });
 
     if let Some(stdout) = child.stdout.take() {
-        let reader = std::io::BufReader::new(stdout);
-        for line in reader.lines() {
-            let line = match line {
-                Ok(line) => line,
+        // Read raw lines and decode them leniently: a non-UTF-8 line must not stop the loop,
+        // or the child can block on a full stdout pipe before it exits.
+        let mut reader = std::io::BufReader::new(stdout);
+        let mut raw = Vec::new();
+        loop {
+            raw.clear();
+            match reader.read_until(b'\n', &mut raw) {
+                Ok(0) => break,
+                Ok(_) => {}
                 Err(error) => {
                     record(format!("FFmpeg check output could not be read: {error}"));
                     break;
                 }
-            };
+            }
+            let decoded = String::from_utf8_lossy(&raw);
+            let line = decoded.trim_end();
             if let Some(msg) = line.strip_prefix("[ffmpeg_download] ") {
                 if !msg.is_empty() {
                     emit(msg);
