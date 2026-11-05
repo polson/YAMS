@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { displayPath, mergePreviews, queueProgress, refreshSong, resolveExportTargets, rowWindow, ROW_HEIGHT, duration, stallNotice, timing, updateSong, scrollbarGeometry, scrollPositionFromThumb, type Song } from '../src/queue.ts';
+import { displayPath, logLevelClass, mergePreviews, queueProgress, refreshSong, resolveExportTargets, rowWindow, ROW_HEIGHT, duration, stallNotice, timing, updateSong, scrollbarGeometry, scrollPositionFromThumb, type Song } from '../src/queue.ts';
 
 const song: Song = { id: 'a', folder: '/songs/a', status: 'ready', source: 'song.opus', backup: 'backup/song.opus', message: '', detail: '', progress: 0, log: '', canRetry: false, startedAt: 0, finishedAt: 0, inferenceAt: 0 };
 
@@ -321,4 +321,12 @@ test('stall notice is logged once per silent period', () => {
   const resumed = { ...noticed, lastEventAt: 90_000 };
   assert.equal(stallNotice(resumed, 100_000), undefined);
   assert.ok(stallNotice(resumed, 151_000));
+});
+
+test('log lines are colored by Python logging level only', () => {
+  assert.equal(logLevelClass('2026-11-05 09:49:25,767 WARNING yams.ffmpeg: no SoXR'), 'log-warning');
+  assert.equal(logLevelClass('2026-11-05 09:49:25,767 ERROR yams.worker: failed'), 'log-error');
+  assert.equal(logLevelClass('CRITICAL: out of memory'), 'log-error');
+  assert.equal(logLevelClass('Error while filtering: Invalid argument'), '');
+  assert.equal(logLevelClass('Loading audio engine…'), '');
 });

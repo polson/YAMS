@@ -8,7 +8,7 @@
   import { open } from '@tauri-apps/plugin-dialog';
   import { relaunch } from '@tauri-apps/plugin-process';
   import { check } from '@tauri-apps/plugin-updater';
-  import { displayPath, mergePreviews, queueProgress, refreshSong, resolveExportTargets, rowWindow, ROW_HEIGHT, stallNotice, timing, updateSong, scrollbarGeometry, scrollPositionFromThumb, type BatchEvent, type Preview, type Settings, type Song } from './queue';
+  import { displayPath, logLevelClass, mergePreviews, queueProgress, refreshSong, resolveExportTargets, rowWindow, ROW_HEIGHT, stallNotice, timing, updateSong, scrollbarGeometry, scrollPositionFromThumb, type BatchEvent, type Preview, type Settings, type Song } from './queue';
   import { resolveInitialLocale, translate, type TranslationKey } from './i18n/index.ts';
   import logo from './assets/logo.png';
 
@@ -857,7 +857,7 @@
               <div class="terminal-line">{selectedSong.message || selectedSong.detail}</div>
             {/if}
             {#if selectedSong.log}
-              <pre class="terminal-log">{selectedSong.log}</pre>
+              <pre class="terminal-log">{#each selectedSong.log.split('\n') as line}<span class="log-line {logLevelClass(line)}">{line}</span>{'\n'}{/each}</pre>
             {/if}
           </div>
         </div>

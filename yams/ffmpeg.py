@@ -110,9 +110,9 @@ def run_ffmpeg(arguments, action):
 
 @functools.lru_cache(maxsize=4)
 def supports_soxr(binary_path="ffmpeg"):
-    succeeded, reason = _probe_ffmpeg(binary_path, OPUS_SOXR_TEST_ARGS)
+    succeeded, _reason = _probe_ffmpeg(binary_path, OPUS_SOXR_TEST_ARGS)
     if not succeeded:
-        logger.warning("FFmpeg at %s has no SoXR resampler; using the default resampler: %s", binary_path, reason)
+        logger.info("FFmpeg at %s has no SoXR resampler; using the default resampler", binary_path)
     return succeeded
 
 

@@ -112,6 +112,12 @@ function appendLog(log: string, message: string): string {
   return `${log}${log && !log.endsWith('\n') ? '\n' : ''}${entry}\n`.slice(-8192);
 }
 
+export function logLevelClass(line: string): string {
+  if (/\b(ERROR|CRITICAL)\b/.test(line)) { return 'log-error'; }
+  if (/\bWARNING\b/.test(line)) { return 'log-warning'; }
+  return '';
+}
+
 function validationLog(validation: AudioValidation): string {
   const codec = validation.codec === 'pcm_f32le'
     ? 'PCM float'
