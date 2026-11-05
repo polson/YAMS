@@ -307,7 +307,9 @@ fn ensure_ffmpeg(
     let stderr_reader = child.stderr.take().map(|mut stderr| {
         std::thread::spawn(move || {
             let mut bytes = Vec::new();
-            let _ = std::io::Read::read_to_end(&mut stderr, &mut bytes);
+            if let Err(error) = std::io::Read::read_to_end(&mut stderr, &mut bytes) {
+                record(format!("FFmpeg check error output could not be read: {error}"));
+            }
             String::from_utf8_lossy(&bytes).into_owned()
         })
     });

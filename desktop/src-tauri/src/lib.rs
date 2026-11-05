@@ -471,18 +471,24 @@ impl Runner {
         Ok(())
     }
 
+    /// Asks the running worker to stop. The caller decides how to report a failure.
     pub fn cancel(&self) -> Result<(), String> {
         let mut state = self.state();
         state.stop = true;
         if let Some(input) = state.input.as_mut() {
             let sent = input.write_all(b"cancel\n").and_then(|()| input.flush());
             if let Err(error) = sent {
-                let message = format!("Could not send cancel to the worker: {error}");
-                record(&message);
-                return Err(message);
+                return Err(format!("Could not send cancel to the worker: {error}"));
             }
         }
         Ok(())
+    }
+
+    /// Stops the worker from a batch thread, where no caller can receive the error, so it is logged here.
+    fn stop_worker(&self) {
+        if let Err(error) = self.cancel() {
+            record(error);
+        }
     }
 
     pub fn run(&self, settings: Settings, jobs: Vec<Job>, emit: Arc<dyn Fn(Value) + Send + Sync>) {
@@ -575,7 +581,7 @@ impl Runner {
         let stop = state.stop;
         drop(state);
         if stop {
-            let _ = self.cancel();
+            self.stop_worker();
         }
         let stderr = child.stderr.take().unwrap();
         let diagnostic_emit = emit.clone();
@@ -619,7 +625,7 @@ impl Runner {
                 Ok(text) => text,
                 Err(error) => {
                     protocol_error.get_or_insert_with(|| format!("Could not read worker output: {error}"));
-                    let _ = self.cancel();
+                    self.stop_worker();
                     continue;
                 }
             };
@@ -648,7 +654,7 @@ impl Runner {
                     protocol_error.get_or_insert_with(|| {
                         format!("Worker sent an unexpected line on stdout; cancellation requested: {excerpt}")
                     });
-                    let _ = self.cancel();
+                    self.stop_worker();
                 }
             }
         }

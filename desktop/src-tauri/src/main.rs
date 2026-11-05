@@ -93,7 +93,9 @@ fn start_batch(
             jobs,
             Arc::new(move |event| {
                 if events.send(event).is_err() {
-                    let _ = disconnected.cancel();
+                    if let Err(error) = disconnected.cancel() {
+                        record(error);
+                    }
                 }
             }),
         );
@@ -283,8 +285,12 @@ fn main() {
                 let runner = window.state::<Runner>();
                 if runner.running() {
                     api.prevent_close();
-                    let _ = runner.cancel();
-                    let _ = window.emit("closing_requested", ());
+                    if let Err(error) = runner.cancel() {
+                        record(error);
+                    }
+                    if let Err(error) = window.emit("closing_requested", ()) {
+                        record(format!("Could not tell the window that the batch is stopping: {error}"));
+                    }
                 }
             }
         })
@@ -295,8 +301,12 @@ fn main() {
             let runner = app.state::<Runner>();
             if runner.running() {
                 api.prevent_exit();
-                let _ = runner.cancel();
-                let _ = app.emit("closing_requested", ());
+                if let Err(error) = runner.cancel() {
+                    record(error);
+                }
+                if let Err(error) = app.emit("closing_requested", ()) {
+                    record(format!("Could not tell the window that the batch is stopping: {error}"));
+                }
             }
         }
     });
