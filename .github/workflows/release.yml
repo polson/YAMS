@@ -356,8 +356,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.create-release.outputs.tag }}
         run: |
-          for existing_tag in $(gh release list --limit 100 --json tagName --jq '.[].tagName'); do
+          for existing_tag in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName'); do
             if [ "$existing_tag" != "$TAG" ]; then
-              gh release delete "$existing_tag" -y || true
+              gh release delete "$existing_tag" --repo "$GITHUB_REPOSITORY" -y || true
             fi
           done
