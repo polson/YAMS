@@ -68,7 +68,8 @@ class RuntimeTests(unittest.TestCase):
     def test_missing_packages_lists_pinned_requirements_that_are_not_installed(self):
         with tempfile.TemporaryDirectory() as temporary:
             requirements = Path(temporary) / "requirements.txt"
-            requirements.write_text("# pinned\ndefinitely-not-installed-yams-test==1.0\n")
+            requirements.write_text("# pinned\ndefinitely-not-installed-yams-test==1.0\n"
+                                    "other-platform-only-yams-test==1.0; sys_platform == 'no-such-platform'\n")
             self.assertEqual(missing_packages(requirements), ["definitely-not-installed-yams-test"])
 
     def test_failed_verification_does_not_publish_ready_marker(self):

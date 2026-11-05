@@ -85,16 +85,24 @@ def torch_backend():
 
 
 def missing_packages(requirements):
-    """Lists pinned packages that are not installed. Reads package metadata only, so nothing is imported."""
+    """Lists requirements that apply to this platform and are not installed. Reads package metadata only, so nothing is imported."""
+    # Imported here, not at module level: first-time setup imports this module before packaging is installed.
+    from packaging.requirements import InvalidRequirement, Requirement
+
     missing = []
     for line in requirements.read_text().splitlines():
-        match = re.match(r"([A-Za-z0-9][A-Za-z0-9._-]*)==", line.strip())
-        if not match:
+        if not line.strip() or line.lstrip().startswith("#"):
             continue
         try:
-            distribution_version(match.group(1))
+            requirement = Requirement(line.strip())
+        except InvalidRequirement:
+            continue
+        if requirement.marker is not None and not requirement.marker.evaluate():
+            continue
+        try:
+            distribution_version(requirement.name)
         except PackageNotFoundError:
-            missing.append(match.group(1))
+            missing.append(requirement.name)
     return missing
 
 
