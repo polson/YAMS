@@ -483,7 +483,7 @@
           id: song.id,
           folder: song.folder,
           output_folder: exportTargets.get(song.folder) || null,
-          recover: false,
+          recover: song.status === 'recovery_required',
         })),
         events,
       });
