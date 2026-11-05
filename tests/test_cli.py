@@ -156,6 +156,27 @@ class CommandTests(unittest.TestCase):
         for name in OUTPUTS:
             self.assertTrue((folder / name).is_file())
 
+    def test_recover_flag_discards_interrupted_work_then_separates_in_one_run(self):
+        folder = self.fixture()
+        folders.begin(folder, folder / "song.ogg")
+        output = io.StringIO()
+
+        def separate(stage, **kwargs):
+            for name in OUTPUTS:
+                (stage / "outputs" / name).write_bytes(name.encode())
+            files = {name: {"sha256": digest(stage / "outputs" / name)} for name in OUTPUTS}
+            return {"validation": {"peak_error": 0, "files": files}}
+
+        with patch.object(sys, "argv", [*self.command(folder), "--recover"]), contextlib.redirect_stdout(output), \
+             patch("yams.audio.separate", side_effect=separate):
+            status = main()
+        events = [json.loads(line)["event"] for line in output.getvalue().splitlines()]
+        self.assertEqual(status, 0)
+        self.assertNotIn("recovered", events)
+        self.assertEqual(events[-1], "completed")
+        self.assertEqual((folder / "backup/song.ogg").read_bytes(), b"original")
+        self.assertFalse((folder / ".yams-work").exists())
+
     def test_audio_recovery_waits_for_processing_lock(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -175,7 +196,15 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(json.loads(output.getvalue().splitlines()[-1])["event"], "error")
 
         output = io.StringIO()
-        with patch.object(sys, "argv", ["yams", str(audio), "--recover"]), contextlib.redirect_stdout(output):
+
+        def separate(stage, **kwargs):
+            for name in OUTPUTS:
+                (stage / "outputs" / name).write_bytes(name.encode())
+            files = {name: {"sha256": digest(stage / "outputs" / name)} for name in OUTPUTS}
+            return {"validation": {"peak_error": 0, "files": files}}
+
+        with patch.object(sys, "argv", ["yams", str(audio), "--recover", "--models", str(root)]), \
+             contextlib.redirect_stdout(output), patch("yams.audio.separate", side_effect=separate):
             status = main()
         self.assertEqual(status, 0)
         self.assertFalse(stage.exists())

@@ -137,8 +137,9 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(json.loads(preview.stdout)["status"], "ready")
             (song / ".yams-work").mkdir()
             recovery = subprocess.run(args=[*command, "--recover"], capture_output=True, text=True)
-            self.assertEqual(recovery.returncode, 0, recovery.stderr)
-            self.assertEqual(json.loads(recovery.stdout)["event"], "recovered")
+            self.assertEqual(recovery.returncode, 1)
+            self.assertIn("runtime_error", [json.loads(line)["event"] for line in recovery.stdout.splitlines()])
+            self.assertFalse((song / ".yams-work").exists())
             self.assertEqual((song / "song.wav").read_bytes(), b"original")
 
 

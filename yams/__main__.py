@@ -151,6 +151,39 @@ def recover_transaction(folder, output_folder=None):
     return False
 
 
+def recover_interrupted(folder, output_folder=None):
+    if recover_transaction(folder, output_folder=output_folder):
+        return True
+    if is_con_file(folder):
+        sibling = folder.parent / (folder.stem if folder.suffix else f"{folder.name}_unpacked")
+        from .confile import abort_con_process
+        if sibling.exists():
+            with locked(sibling):
+                abort_con_process(sibling, folder, "inplace")
+        return True
+    if is_excon_folder(folder):
+        from .confile import abort_excon_process
+        with locked(folder):
+            abort_excon_process(folder, "inplace")
+        return True
+    if is_audio_file(folder):
+        sibling = folder.parent / folder.stem
+        if sibling.exists():
+            with locked(sibling):
+                abort_audio_process(destination=sibling, mode="inplace", audio_path=folder)
+        return True
+    if is_multitrack_folder(folder):
+        return False
+    single_audio = find_single_audio_in_folder(folder)
+    if single_audio is not None and not (folder / "song.ini").exists():
+        with locked(folder):
+            abort_audio_process(destination=folder, mode="inplace", audio_path=single_audio)
+        return True
+    with locked(folder):
+        recover(folder)
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description="Separate one INI song in place with verified original backups")
     parser.add_argument("folder", type=Path, nargs="?")
@@ -224,44 +257,8 @@ def main():
             del fields["folder"]
             emit("preview", **fields)
             return 0
-        if args.recover:
-            if recover_transaction(folder, output_folder=args.output_folder):
-                emit("recovered", result="discarded_staging")
-                return 0
-            if is_con_file(folder):
-                sibling = folder.parent / (folder.stem if folder.suffix else f"{folder.name}_unpacked")
-                from .confile import abort_con_process
-                if sibling.exists():
-                    with locked(sibling):
-                        abort_con_process(sibling, folder, "inplace")
-                emit("recovered", result="discarded_staging")
-                return 0
-            if is_excon_folder(folder):
-                from .confile import abort_excon_process
-                with locked(folder):
-                    abort_excon_process(folder, "inplace")
-                emit("recovered", result="discarded_staging")
-                return 0
-            if is_audio_file(folder):
-                sibling = folder.parent / folder.stem
-                if sibling.exists():
-                    with locked(sibling):
-                        abort_audio_process(destination=sibling, mode="inplace", audio_path=folder)
-                emit("recovered", result="discarded_staging")
-                return 0
-            if is_multitrack_folder(folder):
-                emit("skipped", reason="already_contains_multitrack_stems")
-                return 0
-            single_audio = find_single_audio_in_folder(folder)
-            if single_audio is not None and not (folder / "song.ini").exists():
-                with locked(folder):
-                    abort_audio_process(destination=folder, mode="inplace", audio_path=single_audio)
-                emit("recovered", result="discarded_staging")
-                return 0
-            with locked(folder):
-                result = recover(folder)
-                emit("recovered", result=result)
-            return 0
+        if args.recover and recover_interrupted(folder, output_folder=args.output_folder):
+            emit("stage", message="Recovered interrupted work. Starting separation.")
         if is_multitrack_folder(folder):
             emit("skipped", reason="already_contains_multitrack_stems")
             return 0

@@ -76,7 +76,7 @@ def interruption_message(stage):
         except (OSError, ValueError, KeyError):
             unchanged = False
         if unchanged:
-            return f"An earlier run was interrupted while separating. Your original file is unchanged. Retry discards the partial work. Then press Retry again to separate. {where}"
+            return f"An earlier run was interrupted while separating. Your original file is unchanged. Retry discards the partial work and separates the song again. {where}"
         return f"An earlier run was interrupted while separating, and the original file has changed since. Retry cannot clean this up automatically. Check the partial work before deleting it. {where}"
     if state == "publishing":
         return f"An earlier run was interrupted while writing results. Retry rolls back the partial results. {where}"
