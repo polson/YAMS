@@ -8,7 +8,7 @@ import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
-from yams.runtime import MissingVisualCRuntime, ensure_runtime, run_setup, torch_backend, visual_c_runtime_installed
+from yams.runtime import MissingVisualCRuntime, ensure_runtime, missing_packages, run_setup, torch_backend, visual_c_runtime_installed
 
 
 class RuntimeTests(unittest.TestCase):
@@ -40,7 +40,8 @@ class RuntimeTests(unittest.TestCase):
             runtime.mkdir()
             (root / "requirements.txt").write_text("dependency==1\n")
             (root / "check_runtime.py").write_text("pass\n")
-            with patch.object(sys, "prefix", str(runtime)), patch("yams.runtime.torch_backend", return_value="cpu"), patch("yams.runtime.run_setup") as setup:
+            with patch.object(sys, "prefix", str(runtime)), patch("yams.runtime.torch_backend", return_value="cpu"), patch("yams.runtime.run_setup") as setup, \
+                    patch("yams.runtime.missing_packages", return_value=[]):
                 ensure_runtime(installer=root / "uv", resources=root, emit=lambda *args, **kwargs: None, cancelled=threading.Event())
                 self.assertEqual(setup.call_count, 2)
                 self.assertTrue((runtime / ".yams-ready").is_file())
@@ -49,6 +50,26 @@ class RuntimeTests(unittest.TestCase):
                 (root / "requirements.txt").write_text("dependency==2\n")
                 ensure_runtime(installer=root / "uv", resources=root, emit=lambda *args, **kwargs: None, cancelled=threading.Event())
                 self.assertEqual(setup.call_count, 4)
+
+    def test_missing_package_with_a_current_marker_reinstalls(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runtime = root / "runtime"
+            runtime.mkdir()
+            (root / "requirements.txt").write_text("dependency==1\n")
+            (root / "check_runtime.py").write_text("pass\n")
+            with patch.object(sys, "prefix", str(runtime)), patch("yams.runtime.torch_backend", return_value="cpu"), patch("yams.runtime.run_setup") as setup:
+                with patch("yams.runtime.missing_packages", return_value=[]):
+                    ensure_runtime(installer=root / "uv", resources=root, emit=lambda *args, **kwargs: None, cancelled=threading.Event())
+                with patch("yams.runtime.missing_packages", return_value=["dependency"]), self.assertLogs("yams.runtime", level="WARNING"):
+                    ensure_runtime(installer=root / "uv", resources=root, emit=lambda *args, **kwargs: None, cancelled=threading.Event())
+                self.assertEqual(setup.call_count, 4)
+
+    def test_missing_packages_lists_pinned_requirements_that_are_not_installed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            requirements = Path(temporary) / "requirements.txt"
+            requirements.write_text("# pinned\ndefinitely-not-installed-yams-test==1.0\n")
+            self.assertEqual(missing_packages(requirements), ["definitely-not-installed-yams-test"])
 
     def test_failed_verification_does_not_publish_ready_marker(self):
         with tempfile.TemporaryDirectory() as temporary:

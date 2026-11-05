@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import os
+from importlib.metadata import PackageNotFoundError, version as distribution_version
 from pathlib import Path
 import platform
 import re
@@ -83,6 +84,20 @@ def torch_backend():
     return "cpu"
 
 
+def missing_packages(requirements):
+    """Lists pinned packages that are not installed. Reads package metadata only, so nothing is imported."""
+    missing = []
+    for line in requirements.read_text().splitlines():
+        match = re.match(r"([A-Za-z0-9][A-Za-z0-9._-]*)==", line.strip())
+        if not match:
+            continue
+        try:
+            distribution_version(match.group(1))
+        except PackageNotFoundError:
+            missing.append(match.group(1))
+    return missing
+
+
 def run_setup(arguments, cache, cancelled, emit=None):
     logger.info("Running %s", " ".join(str(argument) for argument in arguments))
     env = {key: value for key, value in os.environ.items() if key not in ("PYTHONHOME", "PYTHONPATH")}
@@ -150,9 +165,13 @@ def ensure_runtime(installer, resources, emit, cancelled):
                       cancelled=cancelled)
         marker = runtime / ".yams-ready"
         legacy_marker = runtime / ".yass-ready"
-        if (marker.is_file() and marker.read_text() == version) or (legacy_marker.is_file() and legacy_marker.read_text() == version):
-            return
-        if marker.exists() or legacy_marker.exists():
+        current = (marker.is_file() and marker.read_text() == version) or (legacy_marker.is_file() and legacy_marker.read_text() == version)
+        if current:
+            missing = missing_packages(requirements)
+            if not missing:
+                return
+            logger.warning("Audio engine packages are missing: %s; reinstalling them", ", ".join(missing))
+        elif marker.exists() or legacy_marker.exists():
             logger.info("Audio engine packages need setup: requirements or the setup script changed")
         else:
             logger.info("Audio engine packages need setup: no ready marker in %s", runtime)
